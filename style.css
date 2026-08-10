@@ -799,3 +799,11 @@ a{color:inherit}
 @media (min-width:1024px){
   .lg\:grid-cols-7{grid-template-columns:repeat(7,minmax(0,1fr))}
 }
+
+.grid-cols-\[140px_1fr\]{grid-template-columns:140px 1fr}
+@media print{
+  .print-hide{display:none !important}
+  body{background:#fff}
+  .rounded-xl,.rounded-lg{border-radius:0}
+  .shadow-sm,.shadow-xl{box-shadow:none}
+}
