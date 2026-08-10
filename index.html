@@ -14,6 +14,26 @@
 </head>
 <body>
 <div id="root"></div>
+<div id="boot-error" style="display:none; font-family: -apple-system, sans-serif; padding: 20px; color: #b91c1c; background: #fef2f2; white-space: pre-wrap; word-break: break-word;"></div>
+<script>
+  function showBootError(msg) {
+    var el = document.getElementById("boot-error");
+    el.style.display = "block";
+    el.textContent += (el.textContent ? "\n\n" : "") + msg;
+  }
+  window.addEventListener("error", function (e) {
+    showBootError("錯誤: " + e.message + (e.filename ? ("\n位置: " + e.filename + ":" + e.lineno) : ""));
+  });
+  setTimeout(function () {
+    if (typeof React === "undefined") showBootError("React 沒有載入成功(unpkg react.production.min.js)");
+    if (typeof ReactDOM === "undefined") showBootError("ReactDOM 沒有載入成功(unpkg react-dom.production.min.js)");
+    if (typeof Babel === "undefined") showBootError("Babel 沒有載入成功(unpkg babel.min.js)");
+    var rootEl = document.getElementById("root");
+    if (rootEl && rootEl.innerHTML.trim() === "" && document.getElementById("boot-error").textContent.trim() === "") {
+      showBootError("畫面是空的,但沒有偵測到明顯的載入錯誤,可能是程式執行時的錯誤(請截圖這個畫面給我)。");
+    }
+  }, 3000);
+</script>
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useMemo, useRef } = React;
 
