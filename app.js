@@ -859,11 +859,3 @@
   }
   ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(InsuranceTracker));
 })();
-
-.grid-cols-\[140px_1fr\]{grid-template-columns:140px 1fr}
-@media print{
-  .print-hide{display:none !important}
-  body{background:#fff}
-  .rounded-xl,.rounded-lg{border-radius:0}
-  .shadow-sm,.shadow-xl{box-shadow:none}
-}
