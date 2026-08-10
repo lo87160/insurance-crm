@@ -1,0 +1,1079 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>保險客戶追蹤系統</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { margin: 0; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useMemo, useRef } = React;
+
+// -- 本機儲存(取代 Claude 環境專用的 window.storage,改用瀏覽器 localStorage) --
+async function storageGet(key) {
+  try {
+    const v = localStorage.getItem(key);
+    return v !== null ? { key, value: v, shared: false } : null;
+  } catch (e) { return null; }
+}
+async function storageSet(key, value) {
+  try {
+    localStorage.setItem(key, value);
+    return { key, value, shared: false };
+  } catch (e) { return null; }
+}
+
+// -- 簡易圖示(以純文字/emoji 取代 lucide-react,讓檔案完全獨立不依賴額外套件) --
+function makeIcon(symbol) {
+  return function Icon({ size = 14, className = "" }) {
+    return React.createElement(
+      "span",
+      { className, style: { fontSize: size, lineHeight: 1, display: "inline-block" } },
+      symbol
+    );
+  };
+}
+const Plus = makeIcon("+");
+const Search = makeIcon("\u{1F50D}");
+const Phone = makeIcon("\u{1F4DE}");
+const Mail = makeIcon("\u2709\uFE0F");
+const Cake = makeIcon("\u{1F382}");
+const X = makeIcon("\u2715");
+const Pencil = makeIcon("\u270F\uFE0F");
+const Trash2 = makeIcon("\u{1F5D1}\uFE0F");
+const TrendingUp = makeIcon("\u{1F4C8}");
+const Wallet = makeIcon("\u{1F45B}");
+const AlertCircle = makeIcon("\u26A0\uFE0F");
+const Ban = makeIcon("\u{1F6AB}");
+const ChevronDown = makeIcon("\u25BE");
+const ChevronRight = makeIcon("\u25B8");
+const Shield = makeIcon("\u{1F6E1}\uFE0F");
+const Users = makeIcon("\u{1F465}");
+const FileText = makeIcon("\u{1F4DD}");
+const Download = makeIcon("\u2B07\uFE0F");
+const Upload = makeIcon("\u2B06\uFE0F");
+const Calendar = makeIcon("\u{1F4C5}");
+const Banknote = makeIcon("\u{1F4B5}");
+const Check = makeIcon("\u2714\uFE0F");
+const ListTodo = makeIcon("\u{1F4CB}");
+const PartyPopper = makeIcon("\u{1F389}");
+
+const STAGES = [
+  { key: "名單", label: "名單", tone: "bg-slate-400", text: "text-slate-700", bgSoft: "bg-slate-100", ring: "ring-slate-300" },
+  { key: "聯繫", label: "聯繫", tone: "bg-sky-400", text: "text-sky-700", bgSoft: "bg-sky-100", ring: "ring-sky-300" },
+  { key: "報價", label: "報價", tone: "bg-violet-400", text: "text-violet-700", bgSoft: "bg-violet-100", ring: "ring-violet-300" },
+  { key: "議價", label: "議價", tone: "bg-amber-400", text: "text-amber-700", bgSoft: "bg-amber-100", ring: "ring-amber-300" },
+  { key: "成交", label: "成交", tone: "bg-emerald-500", text: "text-emerald-700", bgSoft: "bg-emerald-100", ring: "ring-emerald-300" },
+];
+const TIERS = [
+  { key: "S", label: "S 長期合作", bg: "bg-rose-100", text: "text-rose-700" },
+  { key: "A", label: "A 單次合作", bg: "bg-violet-100", text: "text-violet-700" },
+  { key: "B", label: "B 預算一般", bg: "bg-sky-100", text: "text-sky-700" },
+  { key: "C", label: "C 不用跟進", bg: "bg-stone-200", text: "text-stone-500" },
+];
+const CATEGORIES = ["壽險", "產險"];
+const PAY_FREQ = ["年繳", "半年繳", "季繳", "月繳", "躉繳"];
+const BILLING_STATUS = [
+  { key: "未請款", bg: "bg-stone-100", text: "text-stone-500" },
+  { key: "已請款待收", bg: "bg-amber-100", text: "text-amber-700" },
+  { key: "已收款", bg: "bg-emerald-100", text: "text-emerald-700" },
+];
+
+const emptyCustomer = { name: "", company: "", occupation: "", contact: "", email: "", birthday: "", tier: "", note: "", lastActivity: "", lastActivityDate: "", nextFollowUp: "", referredBy: "" };
+const emptyPolicy = {
+  category: "壽險", type: "", company: "", insured: "", insuredAmount: "", premium: "", payFreq: "年繳",
+  effectiveDate: "", nextDueDate: "", paymentDate: "", beneficiary: "", stage: "名單", commission: "", lost: false,
+  billingStatus: "未請款", invoiceDate: "",
+};
+
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+function todayStr() { return new Date().toISOString().slice(0, 10); }
+function currency(n) { return (Number(n) || 0).toLocaleString("zh-TW"); }
+
+function daysUntil(dateStr) {
+  const today = new Date(todayStr());
+  const d = new Date(dateStr);
+  return Math.round((d - today) / 86400000);
+}
+
+function dueTone(dateStr, lost, thresholdDays = 30) {
+  if (lost || !dateStr) return { label: dateStr || "—", cls: "text-stone-400" };
+  const diff = daysUntil(dateStr);
+  if (diff < 0) return { label: `已逾期 · ${dateStr}`, cls: "text-rose-600 font-medium" };
+  if (diff <= thresholdDays) return { label: `${diff === 0 ? "今天" : `${diff}天後`} · ${dateStr}`, cls: "text-amber-600 font-medium" };
+  return { label: dateStr, cls: "text-stone-600" };
+}
+
+// 產險:到期日前1個月提醒(30天)。壽險:保單到期日前1年提醒(365天),繳費日前1個月提醒(30天)。
+function expiryThresholdOf(category) { return category === "產險" ? 30 : 365; }
+
+function customerAlert(c) {
+  let minDiff = null;
+  let overdue = false;
+  (c.policies || []).filter((p) => !p.lost).forEach((p) => {
+    if (p.nextDueDate) {
+      const d = daysUntil(p.nextDueDate);
+      if (d <= expiryThresholdOf(p.category)) {
+        if (minDiff === null || d < minDiff) minDiff = d;
+        if (d < 0) overdue = true;
+      }
+    }
+    if (p.category === "壽險" && p.paymentDate) {
+      const d2 = daysUntil(p.paymentDate);
+      if (d2 <= 30) {
+        if (minDiff === null || d2 < minDiff) minDiff = d2;
+        if (d2 < 0) overdue = true;
+      }
+    }
+  });
+  return minDiff === null ? null : { diff: minDiff, overdue };
+}
+
+function nextBirthday(bday) {
+  if (!bday) return null;
+  const today = new Date(todayStr());
+  const b = new Date(bday);
+  let next = new Date(today.getFullYear(), b.getMonth(), b.getDate());
+  if (next < today) next = new Date(today.getFullYear() + 1, b.getMonth(), b.getDate());
+  return { date: next, diff: Math.round((next - today) / 86400000) };
+}
+
+function nextAnniversary(effectiveDate) {
+  if (!effectiveDate) return null;
+  const today = new Date(todayStr());
+  const e = new Date(effectiveDate);
+  let next = new Date(today.getFullYear(), e.getMonth(), e.getDate());
+  if (next < today) next = new Date(today.getFullYear() + 1, e.getMonth(), e.getDate());
+  const years = next.getFullYear() - e.getFullYear();
+  return { date: next, diff: Math.round((next - today) / 86400000), years };
+}
+
+function primaryStageOf(policies) {
+  const active = (policies || []).filter((p) => !p.lost);
+  if (active.length === 0) return null;
+  let best = active[0].stage;
+  active.forEach((p) => {
+    if (STAGES.findIndex((s) => s.key === p.stage) > STAGES.findIndex((s) => s.key === best)) best = p.stage;
+  });
+  return best;
+}
+
+function customerAnniversary(c) {
+  let best = null;
+  (c.policies || []).filter((p) => !p.lost && p.effectiveDate).forEach((p) => {
+    const na = nextAnniversary(p.effectiveDate);
+    if (na && na.diff <= 30 && (!best || na.diff < best.diff)) best = { ...na, type: p.type };
+  });
+  return best;
+}
+
+function initialsOf(name) {
+  if (!name) return "?";
+  return name.trim().slice(0, 2);
+}
+
+function InsuranceTracker() {
+  const [customers, setCustomers] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+  const [expanded, setExpanded] = useState({});
+  const [query, setQuery] = useState("");
+  const [stageFilter, setStageFilter] = useState([]);
+  const [tierFilter, setTierFilter] = useState([]);
+  const [dealMonth, setDealMonth] = useState("");
+  const [saveErr, setSaveErr] = useState("");
+  const fileInputRef = useRef(null);
+
+  const [quickEditId, setQuickEditId] = useState(null);
+  const [quickForm, setQuickForm] = useState({ lastActivity: "", lastActivityDate: "", nextFollowUp: "" });
+
+  const [showCustForm, setShowCustForm] = useState(false);
+  const [custForm, setCustForm] = useState(emptyCustomer);
+  const [editingCustId, setEditingCustId] = useState(null);
+
+  const [showPolForm, setShowPolForm] = useState(false);
+  const [polForm, setPolForm] = useState(emptyPolicy);
+  const [polCustId, setPolCustId] = useState(null);
+  const [editingPolId, setEditingPolId] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await storageGet("insurance_customers", false);
+        if (res && res.value) setCustomers(JSON.parse(res.value));
+      } catch (e) {
+        // no data yet
+      } finally {
+        setLoaded(true);
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!loaded) return;
+    (async () => {
+      try {
+        await storageSet("insurance_customers", JSON.stringify(customers), false);
+        setSaveErr("");
+      } catch (e) {
+        setSaveErr("儲存失敗,請確認網路後再試一次");
+      }
+    })();
+  }, [customers, loaded]);
+
+  const overdueItems = useMemo(() => {
+    const items = [];
+    customers.forEach((c) => {
+      (c.policies || []).filter((p) => !p.lost).forEach((p) => {
+        if (p.nextDueDate && daysUntil(p.nextDueDate) < 0) {
+          items.push({ custId: c.id, custName: c.name, type: p.type, dateLabel: "到期日", date: p.nextDueDate, diff: daysUntil(p.nextDueDate) });
+        }
+        if (p.category === "壽險" && p.paymentDate && daysUntil(p.paymentDate) < 0) {
+          items.push({ custId: c.id, custName: c.name, type: p.type, dateLabel: "繳費日", date: p.paymentDate, diff: daysUntil(p.paymentDate) });
+        }
+        if (p.billingStatus === "已請款待收" && p.invoiceDate && daysUntil(p.invoiceDate) <= -14) {
+          const waited = Math.abs(daysUntil(p.invoiceDate));
+          items.push({ custId: c.id, custName: c.name, type: p.type, dateLabel: "請款", date: p.invoiceDate, diff: -waited, label: `請款已 ${waited} 天未收款` });
+        }
+        if (p.stage === "成交" && p.billingStatus === "未請款" && p.effectiveDate && daysUntil(p.effectiveDate) <= -30) {
+          const waited = Math.abs(daysUntil(p.effectiveDate));
+          items.push({ custId: c.id, custName: c.name, type: p.type, dateLabel: "請款", date: p.effectiveDate, diff: -waited, label: `成交已 ${waited} 天尚未請款` });
+        }
+      });
+      if (c.nextFollowUp && daysUntil(c.nextFollowUp) < 0) {
+        items.push({ custId: c.id, custName: c.name, type: "跟進提醒", dateLabel: "下次追蹤日", date: c.nextFollowUp, diff: daysUntil(c.nextFollowUp) });
+      }
+    });
+    return items.sort((a, b) => a.diff - b.diff);
+  }, [customers]);
+
+  const todayItems = useMemo(() => {
+    const items = [];
+    customers.forEach((c) => {
+      if (c.nextFollowUp && daysUntil(c.nextFollowUp) === 0) {
+        items.push({ custId: c.id, custName: c.name, label: "今日待追蹤" });
+      }
+      const nb = nextBirthday(c.birthday);
+      if (nb && nb.diff === 0) {
+        items.push({ custId: c.id, custName: c.name, label: "今天生日" });
+      }
+      (c.policies || []).filter((p) => !p.lost).forEach((p) => {
+        if (p.nextDueDate && daysUntil(p.nextDueDate) === 0) {
+          items.push({ custId: c.id, custName: c.name, label: `${p.type} 到期日就是今天` });
+        }
+        if (p.category === "壽險" && p.paymentDate && daysUntil(p.paymentDate) === 0) {
+          items.push({ custId: c.id, custName: c.name, label: `${p.type} 繳費日就是今天` });
+        }
+        const anv = nextAnniversary(p.effectiveDate);
+        if (anv && anv.diff === 0) {
+          items.push({ custId: c.id, custName: c.name, label: `${p.type} 保單週年慶(適合關心/加保)` });
+        }
+      });
+    });
+    return items;
+  }, [customers]);
+
+  function jumpToCustomer(custId) {
+    setExpanded((e) => ({ ...e, [custId]: true }));
+    setTimeout(() => {
+      const el = document.getElementById(`cust-${custId}`);
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 50);
+  }
+
+  function toggleFilter(setter, current, key) {
+    if (key === "全部") { setter([]); return; }
+    setter(current.includes(key) ? current.filter((k) => k !== key) : [...current, key]);
+  }
+
+  const filteredCustomers = useMemo(() => {
+    return customers
+      .map((c) => {
+        let policies = c.policies || [];
+        if (stageFilter.length > 0) {
+          policies = policies.filter((p) => (stageFilter.includes("已流失") && p.lost) || (!p.lost && stageFilter.includes(p.stage)));
+        }
+        return { ...c, policies };
+      })
+      .filter((c) => {
+        if (tierFilter.length > 0 && !tierFilter.includes(c.tier)) return false;
+        if (dealMonth) {
+          const hasDeal = (c.policies || []).some((p) => !p.lost && p.stage === "成交" && p.effectiveDate && p.effectiveDate.slice(0, 7) === dealMonth);
+          if (!hasDeal) return false;
+        }
+        if (query.trim()) {
+          const q = query.trim().toLowerCase();
+          const hay = `${c.name} ${c.company} ${c.occupation} ${c.contact} ${c.email} ${c.note} ${c.referredBy} ${(c.policies || []).map((p) => `${p.type} ${p.company}`).join(" ")}`.toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
+        if (stageFilter.length > 0 && c.policies.length === 0) return false;
+        return true;
+      })
+      .sort((a, b) => {
+        const nbA = nextBirthday(a.birthday);
+        const nbB = nextBirthday(b.birthday);
+        const nfA = a.nextFollowUp ? daysUntil(a.nextFollowUp) : 9999;
+        const nfB = b.nextFollowUp ? daysUntil(b.nextFollowUp) : 9999;
+        const dueA = Math.min(...(a.policies || []).filter((p) => !p.lost && (p.nextDueDate || p.paymentDate)).flatMap((p) => [p.nextDueDate, p.paymentDate].filter(Boolean).map(daysUntil)), nbA ? nbA.diff : 9999, nfA, 9999);
+        const dueB = Math.min(...(b.policies || []).filter((p) => !p.lost && (p.nextDueDate || p.paymentDate)).flatMap((p) => [p.nextDueDate, p.paymentDate].filter(Boolean).map(daysUntil)), nbB ? nbB.diff : 9999, nfB, 9999);
+        return dueA - dueB;
+      });
+  }, [customers, query, stageFilter, tierFilter, dealMonth]);
+
+  const stats = useMemo(() => {
+    const visiblePolicies = [];
+    filteredCustomers.forEach((c) => (c.policies || []).forEach((p) => visiblePolicies.push(p)));
+    const active = visiblePolicies.filter((p) => !p.lost);
+    const won = active.filter((p) => p.stage === "成交");
+    const totalPremium = active.reduce((s, p) => s + (Number(p.premium) || 0), 0);
+    const commission = won.reduce((s, p) => s + (Number(p.commission) || 0), 0);
+    const received = won.filter((p) => p.billingStatus === "已收款").reduce((s, p) => s + (Number(p.commission) || 0), 0);
+    const earlyStage = active.filter((p) => p.stage === "名單" || p.stage === "聯繫").length;
+    const quoting = active.filter((p) => p.stage === "報價" || p.stage === "議價").length;
+    return { totalCustomers: filteredCustomers.length, totalPremium, commission, received, earlyStage, quoting, won: won.length };
+  }, [filteredCustomers]);
+
+  const funnelData = useMemo(() => {
+    const visiblePolicies = [];
+    filteredCustomers.forEach((c) => (c.policies || []).forEach((p) => visiblePolicies.push(p)));
+    const active = visiblePolicies.filter((p) => !p.lost);
+    return STAGES.map((s) => {
+      const inStage = active.filter((p) => p.stage === s.key);
+      const premiumSum = inStage.reduce((sum, p) => sum + (Number(p.premium) || 0), 0);
+      const receivedSum = s.key === "成交" ? inStage.filter((p) => p.billingStatus === "已收款").reduce((sum, p) => sum + (Number(p.commission) || 0), 0) : null;
+      return { count: inStage.length, premiumSum, receivedSum };
+    });
+  }, [filteredCustomers]);
+  const funnelMax = Math.max(1, ...funnelData.map((f) => f.count));
+
+  const referralStats = useMemo(() => {
+    const counts = {};
+    customers.forEach((c) => {
+      if (c.referredBy && c.referredBy.trim()) {
+        const key = c.referredBy.trim();
+        counts[key] = (counts[key] || 0) + 1;
+      }
+    });
+    return Object.entries(counts).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 5);
+  }, [customers]);
+
+
+  function toggleExpand(id) { setExpanded((e) => ({ ...e, [id]: !e[id] })); }
+
+  function openAddCustomer() { setCustForm(emptyCustomer); setEditingCustId(null); setShowCustForm(true); }
+  function openEditCustomer(c) { setCustForm({ ...emptyCustomer, ...c }); setEditingCustId(c.id); setShowCustForm(true); }
+  function submitCustomer(e) {
+    e.preventDefault();
+    if (!custForm.name.trim()) return;
+    if (editingCustId) {
+      setCustomers((cs) => cs.map((c) => (c.id === editingCustId ? { ...c, ...custForm } : c)));
+    } else {
+      const id = uid();
+      setCustomers((cs) => [...cs, { ...custForm, id, policies: [], createdAt: todayStr() }]);
+      setExpanded((e) => ({ ...e, [id]: true }));
+    }
+    setShowCustForm(false);
+  }
+  function removeCustomer(id) { setCustomers((cs) => cs.filter((c) => c.id !== id)); }
+
+  function openQuickEdit(c) {
+    setQuickEditId(c.id);
+    setQuickForm({ lastActivity: c.lastActivity || "", lastActivityDate: c.lastActivityDate || todayStr(), nextFollowUp: c.nextFollowUp || "" });
+  }
+  function saveQuickEdit(custId) {
+    setCustomers((cs) => cs.map((c) => (c.id === custId ? { ...c, ...quickForm } : c)));
+    setQuickEditId(null);
+  }
+
+  function openAddPolicy(custId) { setPolForm(emptyPolicy); setPolCustId(custId); setEditingPolId(null); setShowPolForm(true); }
+  function openEditPolicy(custId, p) { setPolForm({ ...p }); setPolCustId(custId); setEditingPolId(p.id); setShowPolForm(true); }
+  function submitPolicy(e) {
+    e.preventDefault();
+    if (!polForm.type.trim()) return;
+    setCustomers((cs) => cs.map((c) => {
+      if (c.id !== polCustId) return c;
+      let policies = c.policies || [];
+      if (editingPolId) {
+        policies = policies.map((p) => (p.id === editingPolId ? { ...polForm, id: editingPolId } : p));
+      } else {
+        policies = [...policies, { ...polForm, id: uid() }];
+      }
+      return { ...c, policies };
+    }));
+    setShowPolForm(false);
+  }
+  function removePolicy(custId, polId) {
+    setCustomers((cs) => cs.map((c) => (c.id === custId ? { ...c, policies: (c.policies || []).filter((p) => p.id !== polId) } : c)));
+  }
+  function quickStageChange(custId, polId, stage) {
+    setCustomers((cs) => cs.map((c) => c.id === custId
+      ? { ...c, policies: c.policies.map((p) => (p.id === polId ? { ...p, stage, lost: false } : p)) }
+      : c));
+  }
+  function togglePolicyLost(custId, polId) {
+    setCustomers((cs) => cs.map((c) => c.id === custId
+      ? { ...c, policies: c.policies.map((p) => (p.id === polId ? { ...p, lost: !p.lost } : p)) }
+      : c));
+  }
+  function quickBillingChange(custId, polId, billingStatus) {
+    setCustomers((cs) => cs.map((c) => c.id === custId
+      ? { ...c, policies: c.policies.map((p) => (p.id === polId ? { ...p, billingStatus } : p)) }
+      : c));
+  }
+
+  function handleExport() {
+    try {
+      const blob = new Blob([JSON.stringify(customers, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `保險客戶資料_${todayStr()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setSaveErr("匯出失敗");
+    }
+  }
+  function handleImportClick() { fileInputRef.current && fileInputRef.current.click(); }
+  function handleImportFile(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        if (!Array.isArray(data)) throw new Error("format");
+        const withNewIds = data.map((c) => ({
+          ...emptyCustomer, ...c, id: uid(),
+          policies: (c.policies || []).map((p) => ({ ...emptyPolicy, ...p, id: uid() })),
+        }));
+        setCustomers((cs) => [...cs, ...withNewIds]);
+        setSaveErr("");
+      } catch (err) {
+        setSaveErr("匯入失敗,檔案格式不正確(需為本系統匯出的 JSON)");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  }
+
+  return (
+    <div className="min-h-screen bg-stone-50 text-stone-900">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
+        <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-stone-900 flex items-center gap-2">
+              <Shield size={22} className="text-emerald-700" /> 保險客戶追蹤系統
+            </h1>
+            <p className="text-sm text-stone-500 mt-1">保經專用 · 多家保險公司比較 · 多保單追蹤 · 資料自動儲存在本機</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={handleExport}
+              className="flex items-center gap-1.5 text-sm text-stone-600 border border-stone-300 bg-white hover:bg-stone-100 px-3 py-2.5 rounded-lg transition-colors">
+              <Download size={15} /> 匯出
+            </button>
+            <button onClick={handleImportClick}
+              className="flex items-center gap-1.5 text-sm text-stone-600 border border-stone-300 bg-white hover:bg-stone-100 px-3 py-2.5 rounded-lg transition-colors">
+              <Upload size={15} /> 匯入
+            </button>
+            <input ref={fileInputRef} type="file" accept="application/json" className="hidden" onChange={handleImportFile} />
+            <button onClick={openAddCustomer}
+              className="flex items-center gap-1.5 bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors shadow-sm">
+              <Plus size={16} /> 新增客戶
+            </button>
+          </div>
+        </div>
+
+        {saveErr && (
+          <div className="mb-4 flex items-center gap-2 text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
+            <AlertCircle size={15} /> {saveErr}
+          </div>
+        )}
+
+        {/* Search */}
+        <div className="relative mb-3">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
+          <input value={query} onChange={(e) => setQuery(e.target.value)}
+            placeholder="搜尋客戶或保險公司..."
+            className="w-full pl-9 pr-3 py-2.5 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-300 focus:border-emerald-400 bg-white" />
+        </div>
+
+        {/* Deal month filter */}
+        <div className="flex items-center gap-2 mb-3 text-sm">
+          <span className="flex items-center gap-1 text-stone-500 text-xs w-24 shrink-0"><Calendar size={13} /> 成交月份篩選</span>
+          <input type="month" value={dealMonth} onChange={(e) => setDealMonth(e.target.value)}
+            className="border border-stone-300 rounded-lg px-2.5 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-300" />
+          {dealMonth && (
+            <button onClick={() => setDealMonth("")} className="text-xs text-stone-400 hover:text-stone-700 underline">清除</button>
+          )}
+        </div>
+
+        {/* Stage pill filter */}
+        <div className="flex items-center gap-2 mb-2 text-sm flex-wrap">
+          <span className="text-stone-500 text-xs w-24 shrink-0">開發狀態<br /><span className="text-stone-300">可複選</span></span>
+          <PillGroup value={stageFilter} onToggle={(key) => toggleFilter(setStageFilter, stageFilter, key)}
+            options={[{ key: "全部", label: "全部" }, ...STAGES.map((s) => ({ key: s.key, label: s.label })), { key: "已流失", label: "已流失" }]} />
+        </div>
+
+        {/* Tier pill filter */}
+        <div className="flex items-center gap-2 mb-5 text-sm flex-wrap">
+          <span className="text-stone-500 text-xs w-24 shrink-0">客戶分級<br /><span className="text-stone-300">可複選</span></span>
+          <PillGroup value={tierFilter} onToggle={(key) => toggleFilter(setTierFilter, tierFilter, key)}
+            options={[{ key: "全部", label: "全部" }, ...TIERS.map((t) => ({ key: t.key, label: t.label }))]} />
+        </div>
+
+        {/* Stats */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mb-5">
+          <StatCard icon={<Users size={15} />} label="客戶數" value={stats.totalCustomers} />
+          <StatCard icon={<TrendingUp size={15} />} label="預估總保費" value={currency(stats.totalPremium)} prefix="$" />
+          <StatCard icon={<Wallet size={15} />} label="已成交佣金" value={currency(stats.commission)} prefix="$" accent="text-emerald-700" sub={`實收 $${currency(stats.received)}`} />
+          <StatCard icon={<Banknote size={15} />} label="實收金額" value={currency(stats.received)} prefix="$" accent="text-emerald-700" />
+          <StatCard icon={<FileText size={15} />} label="初步接洽" value={stats.earlyStage} suffix="件" />
+          <StatCard icon={<AlertCircle size={15} />} label="報價/議價中" value={stats.quoting} suffix="件" accent={stats.quoting > 0 ? "text-amber-600" : undefined} />
+          <StatCard icon={<Shield size={15} />} label="已簽約" value={stats.won} suffix="件" accent="text-emerald-700" />
+        </div>
+
+        {/* Today's to-dos */}
+        {todayItems.length > 0 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-5">
+            <div className="flex items-center gap-1.5 text-sm font-medium text-amber-700 mb-3">
+              <ListTodo size={15} /> 今日待辦({todayItems.length})
+            </div>
+            <div className="space-y-1.5">
+              {todayItems.map((it, idx) => (
+                <button key={idx} onClick={() => jumpToCustomer(it.custId)}
+                  className="w-full flex items-center justify-between gap-2 text-sm bg-white border border-amber-100 rounded-lg px-3 py-2 hover:bg-amber-100/50 transition-colors text-left">
+                  <span className="text-stone-700 font-medium">{it.custName}</span>
+                  <span className="text-amber-700 text-xs font-medium shrink-0">{it.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Funnel */}
+        <div className="bg-white border border-stone-200 rounded-xl p-5 mb-5">
+          <div className="text-xs font-medium text-stone-500 mb-3 tracking-wide">保單銷售管道 · 各狀態客戶數與金額</div>
+          <div className="flex items-end gap-1.5 h-28">
+            {STAGES.map((s, i) => {
+              const { count, premiumSum, receivedSum } = funnelData[i];
+              const h = Math.max(8, (count / funnelMax) * 100);
+              return (
+                <div key={s.key} className="flex-1 flex flex-col items-center justify-end h-full gap-1">
+                  <div className="text-sm font-serif font-semibold text-stone-800">{count}</div>
+                  {premiumSum > 0 && <div className="text-[10px] text-stone-400">${currency(premiumSum)}</div>}
+                  {receivedSum !== null && receivedSum > 0 && <div className="text-[10px] text-emerald-600 font-medium">實收${currency(receivedSum)}</div>}
+                  <div className={`w-full rounded-t-md ${s.tone}`} style={{ height: `${h}%` }} />
+                  <div className="text-xs text-stone-500">{s.label}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Referral leaderboard */}
+        {referralStats.length > 0 && (
+          <div className="bg-white border border-stone-200 rounded-xl p-5 mb-5">
+            <div className="text-xs font-medium text-stone-500 mb-3 tracking-wide">轉介紹來源排行(前 5 名)</div>
+            <div className="space-y-2">
+              {referralStats.map((r, i) => (
+                <div key={r.name} className="flex items-center gap-3">
+                  <span className="text-xs text-stone-400 w-4">{i + 1}</span>
+                  <span className="text-sm text-stone-700 flex-1">{r.name}</span>
+                  <div className="flex-1 max-w-[160px] bg-stone-100 rounded-full h-2 overflow-hidden">
+                    <div className="h-full bg-emerald-500" style={{ width: `${(r.count / referralStats[0].count) * 100}%` }} />
+                  </div>
+                  <span className="text-xs text-stone-500 w-16 text-right">{r.count} 位客戶</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Overdue overview */}
+        {overdueItems.length > 0 && (
+          <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 mb-5">
+            <div className="flex items-center gap-1.5 text-sm font-medium text-rose-700 mb-3">
+              <AlertCircle size={15} /> 已逾期保單({overdueItems.length})
+            </div>
+            <div className="space-y-1.5">
+              {overdueItems.map((it, idx) => (
+                <button key={idx} onClick={() => jumpToCustomer(it.custId)}
+                  className="w-full flex items-center justify-between gap-2 text-sm bg-white border border-rose-100 rounded-lg px-3 py-2 hover:bg-rose-100/50 transition-colors text-left">
+                  <span className="text-stone-700"><span className="font-medium">{it.custName}</span> · {it.type}</span>
+                  <span className="text-rose-600 text-xs font-medium shrink-0">{it.label || `${it.dateLabel}已逾期 ${Math.abs(it.diff)} 天`} · {it.date}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Customer list */}
+        <div className="space-y-3">
+          {filteredCustomers.length === 0 ? (
+            <div className="bg-white border border-stone-200 rounded-xl py-14 text-center text-stone-400 text-sm">
+              {customers.length === 0 ? "還沒有客戶資料,點右上角「新增客戶」開始追蹤" : "沒有符合條件的客戶"}
+            </div>
+          ) : (
+            filteredCustomers.map((c) => {
+              const isOpen = expanded[c.id] ?? true;
+              const nb = nextBirthday(c.birthday);
+              const pStage = primaryStageOf(c.policies);
+              const stageInfo = pStage ? STAGES.find((s) => s.key === pStage) : null;
+              const tierInfo = TIERS.find((t) => t.key === c.tier);
+              const custPremium = (c.policies || []).filter((p) => !p.lost).reduce((s, p) => s + (Number(p.premium) || 0), 0);
+              const custCommission = (c.policies || []).filter((p) => p.stage === "成交" && !p.lost).reduce((s, p) => s + (Number(p.commission) || 0), 0);
+              const custReceived = (c.policies || []).filter((p) => p.stage === "成交" && !p.lost && p.billingStatus === "已收款").reduce((s, p) => s + (Number(p.commission) || 0), 0);
+              const actTone = c.lastActivityDate ? dueTone(c.lastActivityDate, false) : null;
+              const alert = customerAlert(c);
+              const anniv = customerAnniversary(c);
+              return (
+                <div key={c.id} id={`cust-${c.id}`} className="bg-white border border-stone-200 rounded-xl overflow-hidden scroll-mt-4">
+                  <div className="flex items-start gap-3 px-4 py-3 cursor-pointer hover:bg-stone-50" onClick={() => toggleExpand(c.id)}>
+                    {isOpen ? <ChevronDown size={16} className="text-stone-400 mt-2.5 shrink-0" /> : <ChevronRight size={16} className="text-stone-400 mt-2.5 shrink-0" />}
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium shrink-0 ${tierInfo ? tierInfo.bg : "bg-stone-200"} ${tierInfo ? tierInfo.text : "text-stone-500"}`}>
+                      {initialsOf(c.name)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium text-stone-800">{c.name}</span>
+                        {nb && nb.diff <= 30 && (
+                          <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                            <Cake size={11} /> {nb.diff === 0 ? "今天生日" : `${nb.diff}天後生日`}
+                          </span>
+                        )}
+                        {anniv && (
+                          <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
+                            <PartyPopper size={11} /> {anniv.diff === 0 ? `保單第${anniv.years}週年就是今天` : `保單第${anniv.years}週年${anniv.diff}天後`}
+                          </span>
+                        )}
+                        {alert && (
+                          <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${alert.overdue ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-700"}`}>
+                            <AlertCircle size={11} /> {alert.overdue ? "保單已逾期" : alert.diff === 0 ? "保單今天到期/繳費" : `保單${alert.diff}天後到期/繳費`}
+                          </span>
+                        )}
+                      </div>
+                      {(c.company || c.occupation) && (
+                        <div className="text-xs text-stone-400 mt-0.5">
+                          {c.company}{c.company && c.occupation ? " · " : ""}{c.occupation}
+                        </div>
+                      )}
+                      {c.referredBy && <div className="text-xs text-stone-400 mt-0.5">介紹人:{c.referredBy}</div>}
+                      <div className="flex items-center gap-3 text-xs text-stone-400 mt-0.5 flex-wrap">
+                        {c.contact && <span className="flex items-center gap-1"><Phone size={11} />{c.contact}</span>}
+                        {c.email && <span className="flex items-center gap-1"><Mail size={11} />{c.email}</span>}
+                        <span>{(c.policies || []).length} 張保單</span>
+                        {c.nextFollowUp && (
+                          <span className={`flex items-center gap-1 ${dueTone(c.nextFollowUp, false, 0).cls}`}>
+                            <Calendar size={11} /> 下次追蹤 {c.nextFollowUp}
+                          </span>
+                        )}
+                      </div>
+                      {quickEditId === c.id ? (
+                        <div className="mt-2 flex flex-col gap-1.5 bg-stone-50 border border-stone-200 rounded-lg p-2.5" onClick={(e) => e.stopPropagation()}>
+                          <input value={quickForm.lastActivity} onChange={(e) => setQuickForm({ ...quickForm, lastActivity: e.target.value })}
+                            placeholder="這次聯繫進度,例:已寄送計畫書"
+                            className="w-full px-2.5 py-1.5 text-xs border border-stone-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-300" />
+                          <div className="flex items-center gap-2">
+                            <label className="text-xs text-stone-400 shrink-0">聯繫日</label>
+                            <input type="date" value={quickForm.lastActivityDate} onChange={(e) => setQuickForm({ ...quickForm, lastActivityDate: e.target.value })}
+                              className="flex-1 px-2 py-1 text-xs border border-stone-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-300" />
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <label className="text-xs text-stone-400 shrink-0">下次追蹤</label>
+                            <input type="date" value={quickForm.nextFollowUp} onChange={(e) => setQuickForm({ ...quickForm, nextFollowUp: e.target.value })}
+                              className="flex-1 px-2 py-1 text-xs border border-stone-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-300" />
+                          </div>
+                          <div className="flex gap-2 pt-1">
+                            <button onClick={() => setQuickEditId(null)} className="flex-1 py-1.5 text-xs rounded-md border border-stone-300 text-stone-600 hover:bg-white">取消</button>
+                            <button onClick={() => saveQuickEdit(c.id)} className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs rounded-md bg-emerald-700 hover:bg-emerald-800 text-white font-medium">
+                              <Check size={12} /> 儲存進度
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button onClick={(e) => { e.stopPropagation(); openQuickEdit(c); }}
+                          className="w-full text-left mt-1.5 flex items-center gap-1 text-xs text-stone-500 hover:text-emerald-700 group">
+                          <FileText size={11} className="shrink-0" />
+                          {c.lastActivity ? (
+                            <>
+                              {c.lastActivityDate && <span className={`shrink-0 ${actTone ? actTone.cls : ""}`}>{c.lastActivityDate}</span>}
+                              <span className="truncate">{c.lastActivity}</span>
+                            </>
+                          ) : (
+                            <span className="text-stone-400 group-hover:text-emerald-700">點此更新聯繫進度…</span>
+                          )}
+                          <Pencil size={10} className="opacity-0 group-hover:opacity-100 shrink-0" />
+                        </button>
+                      )}
+
+                    </div>
+                    <div className="flex flex-col items-end gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center gap-1.5">
+                        {tierInfo && <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${tierInfo.bg} ${tierInfo.text}`}>{c.tier}</span>}
+                        {stageInfo && <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${stageInfo.bgSoft} ${stageInfo.text}`}>{stageInfo.label}</span>}
+                      </div>
+                      {custPremium > 0 && <div className="text-sm font-serif font-semibold text-stone-700">${currency(custPremium)}</div>}
+                      {custCommission > 0 && <div className="text-xs text-stone-400">佣金 ${currency(custCommission)}{custReceived > 0 && <span className="text-emerald-600"> · 已收 ${currency(custReceived)}</span>}</div>}
+                      <div className="flex items-center gap-1 mt-1">
+                        <button onClick={() => openAddPolicy(c.id)} title="新增保單" className="p-1.5 text-stone-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-md">
+                          <Plus size={13} />
+                        </button>
+                        <button onClick={() => openEditCustomer(c)} title="編輯客戶" className="p-1.5 text-stone-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-md">
+                          <Pencil size={13} />
+                        </button>
+                        <button onClick={() => removeCustomer(c.id)} title="刪除客戶" className="p-1.5 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded-md">
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {isOpen && (
+                    <div className="border-t border-stone-100">
+                      {c.note && <div className="px-4 py-2 text-xs text-stone-500 bg-stone-50 border-b border-stone-100">備註:{c.note}</div>}
+                      {(c.policies || []).length === 0 ? (
+                        <div className="px-4 py-4 text-xs text-stone-400">尚無保單,點上方 + 新增保單</div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="text-left text-xs text-stone-400 border-b border-stone-100">
+                                <th className="px-4 py-2 font-medium">險種</th>
+                                <th className="px-4 py-2 font-medium">保險公司</th>
+                                <th className="px-4 py-2 font-medium">保額/保費</th>
+                                <th className="px-4 py-2 font-medium">階段</th>
+                                <th className="px-4 py-2 font-medium">到期日</th>
+                                <th className="px-4 py-2 font-medium">繳費日</th>
+                                <th className="px-4 py-2 font-medium">受益人</th>
+                                <th className="px-4 py-2 font-medium">請款/收款</th>
+                                <th className="px-4 py-2 font-medium text-right">操作</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {c.policies.map((p) => {
+                                const sInfo = STAGES.find((s) => s.key === p.stage) || STAGES[0];
+                                const dt = dueTone(p.nextDueDate, p.lost, expiryThresholdOf(p.category));
+                                const pt = p.category === "壽險" ? dueTone(p.paymentDate, p.lost, 30) : null;
+                                const anv = !p.lost ? nextAnniversary(p.effectiveDate) : null;
+                                return (
+                                  <tr key={p.id} className={`border-b border-stone-50 last:border-0 ${p.lost ? "opacity-50" : ""}`}>
+                                    <td className="px-4 py-2.5">
+                                      <div className="text-stone-800">{p.type}</div>
+                                      <div className="text-xs text-stone-400">{p.category}{p.payFreq ? ` · ${p.payFreq}` : ""}</div>
+                                      {p.insured && <div className="text-xs text-stone-400">被保:{p.insured}</div>}
+                                      {anv && anv.diff <= 30 && (
+                                        <div className="text-xs text-emerald-600">🎉 第{anv.years}週年 {anv.diff === 0 ? "就是今天" : `${anv.diff}天後`}</div>
+                                      )}
+                                    </td>
+                                    <td className="px-4 py-2.5 text-stone-500">{p.company || "—"}</td>
+                                    <td className="px-4 py-2.5 font-serif text-stone-700">
+                                      {p.insuredAmount ? `保額 $${currency(p.insuredAmount)}` : "—"}
+                                      <div className="text-xs text-stone-400 font-sans">{p.premium ? `保費 $${currency(p.premium)}` : ""}</div>
+                                    </td>
+                                    <td className="px-4 py-2.5">
+                                      {p.lost ? (
+                                        <span className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-stone-200 text-stone-500">
+                                          <Ban size={11} /> 已流失
+                                        </span>
+                                      ) : (
+                                        <div className="relative inline-block">
+                                          <select value={p.stage} onChange={(e) => quickStageChange(c.id, p.id, e.target.value)}
+                                            className={`appearance-none text-xs font-medium pl-2.5 pr-6 py-1 rounded-full ${sInfo.bgSoft} ${sInfo.text} border-0 focus:outline-none focus:ring-2 ${sInfo.ring} cursor-pointer`}>
+                                            {STAGES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+                                          </select>
+                                          <ChevronDown size={11} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" />
+                                        </div>
+                                      )}
+                                    </td>
+                                    <td className="px-4 py-2.5">
+                                      <div className={`text-xs ${dt.cls}`}>{dt.label}</div>
+                                    </td>
+                                    <td className="px-4 py-2.5">
+                                      <div className={`text-xs ${pt ? pt.cls : "text-stone-300"}`}>{pt ? pt.label : "—"}</div>
+                                    </td>
+                                    <td className="px-4 py-2.5 text-stone-500 text-xs">{p.beneficiary || "—"}</td>
+                                    <td className="px-4 py-2.5">
+                                      {p.lost ? (
+                                        <span className="text-xs text-stone-300">—</span>
+                                      ) : (
+                                        <div className="relative inline-block">
+                                          {(() => {
+                                            const bInfo = BILLING_STATUS.find((b) => b.key === p.billingStatus) || BILLING_STATUS[0];
+                                            return (
+                                              <select value={p.billingStatus || "未請款"} onChange={(e) => quickBillingChange(c.id, p.id, e.target.value)}
+                                                className={`appearance-none text-xs font-medium pl-2.5 pr-6 py-1 rounded-full ${bInfo.bg} ${bInfo.text} border-0 focus:outline-none focus:ring-2 focus:ring-emerald-200 cursor-pointer`}>
+                                                {BILLING_STATUS.map((b) => <option key={b.key} value={b.key}>{b.key}</option>)}
+                                              </select>
+                                            );
+                                          })()}
+                                          <ChevronDown size={11} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" />
+                                        </div>
+                                      )}
+                                    </td>
+                                    <td className="px-4 py-2.5">
+                                      <div className="flex items-center justify-end gap-1">
+                                        <button onClick={() => togglePolicyLost(c.id, p.id)} title={p.lost ? "恢復追蹤" : "標記流失"} className="p-1.5 text-stone-400 hover:text-stone-700 hover:bg-stone-100 rounded-md">
+                                          <Ban size={13} />
+                                        </button>
+                                        <button onClick={() => openEditPolicy(c.id, p)} title="編輯" className="p-1.5 text-stone-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-md">
+                                          <Pencil size={13} />
+                                        </button>
+                                        <button onClick={() => removePolicy(c.id, p.id)} title="刪除" className="p-1.5 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded-md">
+                                          <Trash2 size={13} />
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+
+      {/* Customer modal */}
+      {showCustForm && (
+        <div className="fixed inset-0 bg-stone-900/40 flex items-center justify-center p-4 z-50" onClick={() => setShowCustForm(false)}>
+          <div className="bg-white rounded-xl w-full max-w-md p-6 shadow-xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-base font-semibold text-stone-800">{editingCustId ? "編輯客戶" : "新增客戶"}</h2>
+              <button onClick={() => setShowCustForm(false)} className="text-stone-400 hover:text-stone-700"><X size={18} /></button>
+            </div>
+            <form onSubmit={submitCustomer} className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="姓名 *">
+                  <input required value={custForm.name} onChange={(e) => setCustForm({ ...custForm, name: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-300" />
+                </Field>
+                <Field label="公司/服務單位">
+                  <input value={custForm.company} onChange={(e) => setCustForm({ ...custForm, company: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-300" />
+                </Field>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="職業">
+                  <input value={custForm.occupation} onChange={(e) => setCustForm({ ...custForm, occupation: e.target.value })}
+                    placeholder="例:工程師、老師、自營商"
+                    className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-300" />
+                </Field>
+                <Field label="電話">
+                  <input value={custForm.contact} onChange={(e) => setCustForm({ ...custForm, contact: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-300" />
+                </Field>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="生日">
+                  <input type="date" value={custForm.birthday} onChange={(e) => setCustForm({ ...custForm, birthday: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-300" />
+                </Field>
+                <Field label="Email">
+                  <input value={custForm.email} onChange={(e) => setCustForm({ ...custForm, email: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-300" />
+                </Field>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="客戶分級">
+                  <select value={custForm.tier} onChange={(e) => setCustForm({ ...custForm, tier: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-300">
+                    <option value="">未分級</option>
+                    {TIERS.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+                  </select>
+                </Field>
+                <Field label="介紹人(轉介紹來源)">
+                  <input value={custForm.referredBy} onChange={(e) => setCustForm({ ...custForm, referredBy: e.target.value })}
+                    placeholder="例:陳美玲"
+                    className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-300" />
+                </Field>
+              </div>
+              <div className="grid grid-cols-[1fr_140px] gap-3">
+                <Field label="最新動態">
+                  <input value={custForm.lastActivity} onChange={(e) => setCustForm({ ...custForm, lastActivity: e.target.value })}
+                    placeholder="例:初次拜訪,下次跟進..."
+                    className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-300" />
+                </Field>
+                <Field label="聯繫日">
+                  <input type="date" value={custForm.lastActivityDate} onChange={(e) => setCustForm({ ...custForm, lastActivityDate: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-300" />
+                </Field>
+              </div>
+              <Field label="下次追蹤日期">
+                <input type="date" value={custForm.nextFollowUp} onChange={(e) => setCustForm({ ...custForm, nextFollowUp: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-300" />
+              </Field>
+              <Field label="備註(健康註記等)">
+                <textarea rows={2} value={custForm.note} onChange={(e) => setCustForm({ ...custForm, note: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-300 resize-none" />
+              </Field>
+              <div className="flex gap-2 pt-2">
+                <button type="button" onClick={() => setShowCustForm(false)} className="flex-1 py-2 text-sm rounded-lg border border-stone-300 text-stone-600 hover:bg-stone-50">取消</button>
+                <button type="submit" className="flex-1 py-2 text-sm rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-medium">
+                  {editingCustId ? "儲存變更" : "新增"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Policy modal */}
+      {showPolForm && (
+        <div className="fixed inset-0 bg-stone-900/40 flex items-center justify-center p-4 z-50" onClick={() => setShowPolForm(false)}>
+          <div className="bg-white rounded-xl w-full max-w-md p-6 shadow-xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-base font-semibold text-stone-800">{editingPolId ? "編輯保單" : "新增保單"}</h2>
+              <button onClick={() => setShowPolForm(false)} className="text-stone-400 hover:text-stone-700"><X size={18} /></button>
+            </div>
+            <form onSubmit={submitPolicy} className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="保險別">
+                  <select value={polForm.category} onChange={(e) => setPolForm({ ...polForm, category: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-300">
+                    {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </Field>
+                <Field label="繳費頻率">
+                  <select value={polForm.payFreq} onChange={(e) => setPolForm({ ...polForm, payFreq: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-300">
+                    {PAY_FREQ.map((f) => <option key={f} value={f}>{f}</option>)}
+                  </select>
+                </Field>
+              </div>
+              <Field label="險種名稱 * (例:醫療險、車險)">
+                <input required value={polForm.type} onChange={(e) => setPolForm({ ...polForm, type: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-300" />
+              </Field>
+              <Field label="保險公司">
+                <input value={polForm.company} onChange={(e) => setPolForm({ ...polForm, company: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-300" />
+              </Field>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="保額">
+                  <input type="number" value={polForm.insuredAmount} onChange={(e) => setPolForm({ ...polForm, insuredAmount: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-300" />
+                </Field>
+                <Field label="保費">
+                  <input type="number" value={polForm.premium} onChange={(e) => setPolForm({ ...polForm, premium: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-300" />
+                </Field>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="生效日">
+                  <input type="date" value={polForm.effectiveDate} onChange={(e) => setPolForm({ ...polForm, effectiveDate: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-300" />
+                </Field>
+                <Field label={polForm.category === "產險" ? "到期日(到期前1個月提醒)" : "保單到期日(到期前1年提醒)"}>
+                  <input type="date" value={polForm.nextDueDate} onChange={(e) => setPolForm({ ...polForm, nextDueDate: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-300" />
+                </Field>
+              </div>
+              {polForm.category === "壽險" && (
+                <Field label="繳費日(繳費前1個月提醒)">
+                  <input type="date" value={polForm.paymentDate} onChange={(e) => setPolForm({ ...polForm, paymentDate: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-300" />
+                </Field>
+              )}
+              <Field label="被保險人(若與要保人不同)">
+                <input value={polForm.insured} onChange={(e) => setPolForm({ ...polForm, insured: e.target.value })}
+                  placeholder="預設同要保人"
+                  className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-300" />
+              </Field>
+              <Field label="受益人">
+                <input value={polForm.beneficiary} onChange={(e) => setPolForm({ ...polForm, beneficiary: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-300" />
+              </Field>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="階段">
+                  <select value={polForm.stage} onChange={(e) => setPolForm({ ...polForm, stage: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-300">
+                    {STAGES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+                  </select>
+                </Field>
+                <Field label="佣金(成交後)">
+                  <input type="number" value={polForm.commission} onChange={(e) => setPolForm({ ...polForm, commission: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-300" />
+                </Field>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="請款/收款進度">
+                  <select value={polForm.billingStatus} onChange={(e) => setPolForm({ ...polForm, billingStatus: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-300">
+                    {BILLING_STATUS.map((b) => <option key={b.key} value={b.key}>{b.key}</option>)}
+                  </select>
+                </Field>
+                <Field label="請款日期">
+                  <input type="date" value={polForm.invoiceDate} onChange={(e) => setPolForm({ ...polForm, invoiceDate: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-300" />
+                </Field>
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button type="button" onClick={() => setShowPolForm(false)} className="flex-1 py-2 text-sm rounded-lg border border-stone-300 text-stone-600 hover:bg-stone-50">取消</button>
+                <button type="submit" className="flex-1 py-2 text-sm rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-medium">
+                  {editingPolId ? "儲存變更" : "新增保單"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PillGroup({ value, onToggle, options }) {
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap">
+      {options.map((o) => {
+        const active = o.key === "全部" ? value.length === 0 : value.includes(o.key);
+        return (
+          <button key={o.key} onClick={() => onToggle(o.key)}
+            className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-full border transition-colors ${active ? "bg-emerald-700 border-emerald-700 text-white" : "bg-white border-stone-300 text-stone-600 hover:bg-stone-100"}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${active ? "bg-white" : "bg-stone-300"}`} />
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function StatCard({ icon, label, value, prefix = "", suffix = "", accent, sub }) {
+  return (
+    <div className="bg-white border border-stone-200 rounded-xl p-4">
+      <div className="flex items-center gap-1.5 text-stone-400 text-xs mb-2">{icon} {label}</div>
+      <div className={`text-lg font-serif font-semibold ${accent || "text-stone-800"}`}>{prefix}{value}{suffix}</div>
+      {sub && <div className="text-xs text-stone-400 mt-0.5">{sub}</div>}
+    </div>
+  );
+}
+
+function Field({ label, children }) {
+  return (
+    <label className="block">
+      <span className="block text-xs font-medium text-stone-500 mb-1">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(InsuranceTracker));
+
+</script>
+</body>
+</html>
