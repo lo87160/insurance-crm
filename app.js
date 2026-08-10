@@ -76,10 +76,39 @@
     { key: "\u6210\u4EA4", label: "\u6210\u4EA4", tone: "bg-emerald-500", text: "text-emerald-700", bgSoft: "bg-emerald-100", ring: "ring-emerald-300" }
   ];
   const TIERS = [
-    { key: "S", label: "S \u9577\u671F\u5408\u4F5C", bg: "bg-rose-100", text: "text-rose-700" },
-    { key: "A", label: "A \u55AE\u6B21\u5408\u4F5C", bg: "bg-violet-100", text: "text-violet-700" },
-    { key: "B", label: "B \u9810\u7B97\u4E00\u822C", bg: "bg-sky-100", text: "text-sky-700" },
-    { key: "C", label: "C \u4E0D\u7528\u8DDF\u9032", bg: "bg-stone-200", text: "text-stone-500" }
+    { key: "A", label: "A \u9AD8\u50F9\u503C/\u9AD8\u6F5B\u529B", bg: "bg-rose-100", text: "text-rose-700" },
+    { key: "B", label: "B \u4E2D\u7B49\u50F9\u503C", bg: "bg-sky-100", text: "text-sky-700" },
+    { key: "C", label: "C \u4F4E\u512A\u5148\u7D1A/\u9577\u671F\u57F9\u990A", bg: "bg-stone-200", text: "text-stone-500" }
+  ];
+  const DISC_TYPES = [
+    { key: "D", label: "D \u652F\u914D\u578B" },
+    { key: "I", label: "I \u5F71\u97FF\u578B" },
+    { key: "S", label: "S \u7A69\u5065\u578B" },
+    { key: "C", label: "C \u8B39\u614E\u578B" }
+  ];
+  const TAIWAN_CITIES = [
+    "\u53F0\u5317\u5E02",
+    "\u65B0\u5317\u5E02",
+    "\u6843\u5712\u5E02",
+    "\u53F0\u4E2D\u5E02",
+    "\u53F0\u5357\u5E02",
+    "\u9AD8\u96C4\u5E02",
+    "\u57FA\u9686\u5E02",
+    "\u65B0\u7AF9\u5E02",
+    "\u65B0\u7AF9\u7E23",
+    "\u82D7\u6817\u7E23",
+    "\u5F70\u5316\u7E23",
+    "\u5357\u6295\u7E23",
+    "\u96F2\u6797\u7E23",
+    "\u5609\u7FA9\u5E02",
+    "\u5609\u7FA9\u7E23",
+    "\u5C4F\u6771\u7E23",
+    "\u5B9C\u862D\u7E23",
+    "\u82B1\u84EE\u7E23",
+    "\u53F0\u6771\u7E23",
+    "\u6F8E\u6E56\u7E23",
+    "\u91D1\u9580\u7E23",
+    "\u9023\u6C5F\u7E23"
   ];
   const CATEGORIES = ["\u58FD\u96AA", "\u7522\u96AA"];
   const PAY_FREQ = ["\u5E74\u7E73", "\u534A\u5E74\u7E73", "\u5B63\u7E73", "\u6708\u7E73", "\u8E89\u7E73"];
@@ -88,7 +117,7 @@
     { key: "\u5DF2\u8ACB\u6B3E\u5F85\u6536", bg: "bg-amber-100", text: "text-amber-700" },
     { key: "\u5DF2\u6536\u6B3E", bg: "bg-emerald-100", text: "text-emerald-700" }
   ];
-  const emptyCustomer = { name: "", company: "", occupation: "", contact: "", email: "", birthday: "", tier: "", note: "", lastActivity: "", lastActivityDate: "", nextFollowUp: "", referredBy: "" };
+  const emptyCustomer = { name: "", company: "", occupation: "", contact: "", email: "", birthday: "", tier: "", note: "", lastActivity: "", lastActivityDate: "", nextFollowUp: "", referredBy: "", idNumber: "", addressCity: "", addressStreet: "", discType: "", policyGap: "" };
   const emptyPolicy = {
     category: "\u58FD\u96AA",
     type: "",
@@ -197,8 +226,10 @@
     const [query, setQuery] = useState("");
     const [stageFilter, setStageFilter] = useState([]);
     const [tierFilter, setTierFilter] = useState([]);
+    const [cityFilter, setCityFilter] = useState("");
     const [dealMonth, setDealMonth] = useState("");
     const [saveErr, setSaveErr] = useState("");
+    const [showExportMenu, setShowExportMenu] = useState(false);
     const fileInputRef = useRef(null);
     const [quickEditId, setQuickEditId] = useState(null);
     const [quickForm, setQuickForm] = useState({ lastActivity: "", lastActivityDate: "", nextFollowUp: "" });
@@ -304,13 +335,14 @@
         return __spreadProps(__spreadValues({}, c), { policies });
       }).filter((c) => {
         if (tierFilter.length > 0 && !tierFilter.includes(c.tier)) return false;
+        if (cityFilter && c.addressCity !== cityFilter) return false;
         if (dealMonth) {
           const hasDeal = (c.policies || []).some((p) => !p.lost && p.stage === "\u6210\u4EA4" && p.effectiveDate && p.effectiveDate.slice(0, 7) === dealMonth);
           if (!hasDeal) return false;
         }
         if (query.trim()) {
           const q = query.trim().toLowerCase();
-          const hay = `${c.name} ${c.company} ${c.occupation} ${c.contact} ${c.email} ${c.note} ${c.referredBy} ${(c.policies || []).map((p) => `${p.type} ${p.company}`).join(" ")}`.toLowerCase();
+          const hay = `${c.name} ${c.company} ${c.occupation} ${c.contact} ${c.email} ${c.note} ${c.referredBy} ${c.idNumber} ${c.addressCity} ${c.addressStreet} ${(c.policies || []).map((p) => `${p.type} ${p.company}`).join(" ")}`.toLowerCase();
           if (!hay.includes(q)) return false;
         }
         if (stageFilter.length > 0 && c.policies.length === 0) return false;
@@ -387,6 +419,13 @@
     function removeCustomer(id) {
       setCustomers((cs) => cs.filter((c) => c.id !== id));
     }
+    function confirmRemoveCustomer(c) {
+      const policyCount = (c.policies || []).length;
+      const msg = policyCount > 0 ? `\u78BA\u5B9A\u8981\u522A\u9664\u5BA2\u6236\u300C${c.name}\u300D\u55CE?
+
+\u9019\u6703\u540C\u6642\u522A\u9664\u4ED6\u5E95\u4E0B ${policyCount} \u5F35\u4FDD\u55AE\u8CC7\u6599,\u6B64\u52D5\u4F5C\u7121\u6CD5\u5FA9\u539F\u3002` : `\u78BA\u5B9A\u8981\u522A\u9664\u5BA2\u6236\u300C${c.name}\u300D\u55CE?\u6B64\u52D5\u4F5C\u7121\u6CD5\u5FA9\u539F\u3002`;
+      if (window.confirm(msg)) removeCustomer(c.id);
+    }
     function openQuickEdit(c) {
       setQuickEditId(c.id);
       setQuickForm({ lastActivity: c.lastActivity || "", lastActivityDate: c.lastActivityDate || todayStr(), nextFollowUp: c.nextFollowUp || "" });
@@ -425,6 +464,14 @@
     function removePolicy(custId, polId) {
       setCustomers((cs) => cs.map((c) => c.id === custId ? __spreadProps(__spreadValues({}, c), { policies: (c.policies || []).filter((p) => p.id !== polId) }) : c));
     }
+    function confirmRemovePolicy(custId, p) {
+      if (window.confirm(`\u78BA\u5B9A\u8981\u522A\u9664\u9019\u5F35\u4FDD\u55AE\u55CE?
+
+${p.type}${p.company ? "(" + p.company + ")" : ""}
+\u6B64\u52D5\u4F5C\u7121\u6CD5\u5FA9\u539F\u3002`)) {
+        removePolicy(custId, p.id);
+      }
+    }
     function quickStageChange(custId, polId, stage) {
       setCustomers((cs) => cs.map((c) => c.id === custId ? __spreadProps(__spreadValues({}, c), { policies: c.policies.map((p) => p.id === polId ? __spreadProps(__spreadValues({}, p), { stage, lost: false }) : p) }) : c));
     }
@@ -434,18 +481,70 @@
     function quickBillingChange(custId, polId, billingStatus) {
       setCustomers((cs) => cs.map((c) => c.id === custId ? __spreadProps(__spreadValues({}, c), { policies: c.policies.map((p) => p.id === polId ? __spreadProps(__spreadValues({}, p), { billingStatus }) : p) }) : c));
     }
-    function handleExport() {
+    function downloadBlob(content, filename, mime) {
+      const blob = new Blob([content], { type: mime });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+    function handleExportJSON() {
       try {
-        const blob = new Blob([JSON.stringify(customers, null, 2)], { type: "application/json" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `\u4FDD\u96AA\u5BA2\u6236\u8CC7\u6599_${todayStr()}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
+        downloadBlob(JSON.stringify(customers, null, 2), `\u4FDD\u96AA\u5BA2\u6236\u8CC7\u6599_${todayStr()}.json`, "application/json");
       } catch (e) {
         setSaveErr("\u532F\u51FA\u5931\u6557");
       }
+      setShowExportMenu(false);
+    }
+    function csvEscape(v) {
+      const s = v === null || v === void 0 ? "" : String(v);
+      if (s.includes(",") || s.includes('"') || s.includes("\n")) {
+        return '"' + s.replace(/"/g, '""') + '"';
+      }
+      return s;
+    }
+    function handleExportExcel() {
+      try {
+        const headers = ["\u5BA2\u6236\u59D3\u540D", "\u516C\u53F8", "\u8077\u696D", "\u96FB\u8A71", "Email", "\u5BA2\u6236\u5206\u7D1A", "\u7E23\u5E02", "\u5730\u5740", "\u4ECB\u7D39\u4EBA", "\u96AA\u7A2E", "\u4FDD\u96AA\u516C\u53F8", "\u4FDD\u984D", "\u4FDD\u8CBB", "\u968E\u6BB5", "\u5230\u671F\u65E5", "\u7E73\u8CBB\u65E5", "\u53D7\u76CA\u4EBA", "\u4F63\u91D1", "\u8ACB\u6B3E/\u6536\u6B3E"];
+        const rows = [headers];
+        customers.forEach((c) => {
+          const policies = c.policies && c.policies.length > 0 ? c.policies : [null];
+          policies.forEach((p) => {
+            rows.push([
+              c.name,
+              c.company,
+              c.occupation,
+              c.contact,
+              c.email,
+              TIERS.find((t) => t.key === c.tier) ? TIERS.find((t) => t.key === c.tier).label : "",
+              c.addressCity,
+              c.addressStreet,
+              c.referredBy,
+              p ? p.type : "",
+              p ? p.company : "",
+              p ? p.insuredAmount : "",
+              p ? p.premium : "",
+              p ? p.stage : "",
+              p ? p.nextDueDate : "",
+              p ? p.paymentDate : "",
+              p ? p.beneficiary : "",
+              p ? p.commission : "",
+              p ? p.billingStatus : ""
+            ]);
+          });
+        });
+        const csv = "\uFEFF" + rows.map((r) => r.map(csvEscape).join(",")).join("\r\n");
+        downloadBlob(csv, `\u4FDD\u96AA\u5BA2\u6236\u8CC7\u6599_${todayStr()}.csv`, "text/csv;charset=utf-8");
+      } catch (e) {
+        setSaveErr("\u532F\u51FA\u5931\u6557");
+      }
+      setShowExportMenu(false);
+    }
+    function handleExportPDF() {
+      setShowExportMenu(false);
+      setTimeout(() => window.print(), 50);
     }
     function handleImportClick() {
       fileInputRef.current && fileInputRef.current.click();
@@ -471,15 +570,15 @@
       reader.readAsText(file);
       e.target.value = "";
     }
-    return /* @__PURE__ */ React.createElement("div", { className: "min-h-screen bg-stone-50 text-stone-900" }, /* @__PURE__ */ React.createElement("div", { className: "max-w-6xl mx-auto px-4 sm:px-6 py-8" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-5 flex-wrap gap-3" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h1", { className: "text-2xl font-semibold tracking-tight text-stone-900 flex items-center gap-2" }, /* @__PURE__ */ React.createElement(Shield, { size: 22, className: "text-emerald-700" }), " \u4FDD\u96AA\u5BA2\u6236\u8FFD\u8E64\u7CFB\u7D71"), /* @__PURE__ */ React.createElement("p", { className: "text-sm text-stone-500 mt-1" }, "\u4FDD\u7D93\u5C08\u7528 \xB7 \u591A\u5BB6\u4FDD\u96AA\u516C\u53F8\u6BD4\u8F03 \xB7 \u591A\u4FDD\u55AE\u8FFD\u8E64 \xB7 \u8CC7\u6599\u81EA\u52D5\u5132\u5B58\u5728\u672C\u6A5F")), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2" }, /* @__PURE__ */ React.createElement(
+    return /* @__PURE__ */ React.createElement("div", { className: "min-h-screen bg-stone-50 text-stone-900" }, /* @__PURE__ */ React.createElement("div", { className: "max-w-6xl mx-auto px-4 sm:px-6 py-8" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-5 flex-wrap gap-3" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h1", { className: "text-2xl font-semibold tracking-tight text-stone-900 flex items-center gap-2" }, /* @__PURE__ */ React.createElement(Shield, { size: 22, className: "text-emerald-700" }), " \u4FDD\u96AA\u5BA2\u6236\u8FFD\u8E64\u7CFB\u7D71"), /* @__PURE__ */ React.createElement("p", { className: "text-sm text-stone-500 mt-1" }, "\u4FDD\u7D93\u5C08\u7528 \xB7 \u591A\u5BB6\u4FDD\u96AA\u516C\u53F8\u6BD4\u8F03 \xB7 \u591A\u4FDD\u55AE\u8FFD\u8E64 \xB7 \u8CC7\u6599\u81EA\u52D5\u5132\u5B58\u5728\u672C\u6A5F")), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 print-hide" }, /* @__PURE__ */ React.createElement("div", { className: "relative" }, /* @__PURE__ */ React.createElement(
       "button",
       {
-        onClick: handleExport,
+        onClick: () => setShowExportMenu((v) => !v),
         className: "flex items-center gap-1.5 text-sm text-stone-600 border border-stone-300 bg-white hover:bg-stone-100 px-3 py-2.5 rounded-lg transition-colors"
       },
       /* @__PURE__ */ React.createElement(Download, { size: 15 }),
       " \u532F\u51FA"
-    ), /* @__PURE__ */ React.createElement(
+    ), showExportMenu && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "fixed inset-0 z-40", onClick: () => setShowExportMenu(false) }), /* @__PURE__ */ React.createElement("div", { className: "absolute right-0 top-full mt-1.5 bg-white border border-stone-200 rounded-lg shadow-xl z-50 overflow-hidden w-44" }, /* @__PURE__ */ React.createElement("button", { onClick: handleExportExcel, className: "w-full text-left px-4 py-3 text-sm text-stone-700 hover:bg-stone-50 border-b border-stone-100" }, "Excel(CSV)"), /* @__PURE__ */ React.createElement("button", { onClick: handleExportPDF, className: "w-full text-left px-4 py-3 text-sm text-stone-700 hover:bg-stone-50 border-b border-stone-100" }, "PDF(\u5217\u5370)"), /* @__PURE__ */ React.createElement("button", { onClick: handleExportJSON, className: "w-full text-left px-4 py-3 text-sm text-stone-700 hover:bg-stone-50" }, "JSON(\u5B8C\u6574\u5099\u4EFD)")))), /* @__PURE__ */ React.createElement(
       "button",
       {
         onClick: handleImportClick,
@@ -495,7 +594,7 @@
       },
       /* @__PURE__ */ React.createElement(Plus, { size: 16 }),
       " \u65B0\u589E\u5BA2\u6236"
-    ))), saveErr && /* @__PURE__ */ React.createElement("div", { className: "mb-4 flex items-center gap-2 text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2" }, /* @__PURE__ */ React.createElement(AlertCircle, { size: 15 }), " ", saveErr), /* @__PURE__ */ React.createElement("div", { className: "relative mb-3" }, /* @__PURE__ */ React.createElement(Search, { size: 15, className: "absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" }), /* @__PURE__ */ React.createElement(
+    ))), saveErr && /* @__PURE__ */ React.createElement("div", { className: "mb-4 flex items-center gap-2 text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2" }, /* @__PURE__ */ React.createElement(AlertCircle, { size: 15 }), " ", saveErr), /* @__PURE__ */ React.createElement("div", { className: "relative mb-3 print-hide" }, /* @__PURE__ */ React.createElement(Search, { size: 15, className: "absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" }), /* @__PURE__ */ React.createElement(
       "input",
       {
         value: query,
@@ -503,7 +602,7 @@
         placeholder: "\u641C\u5C0B\u5BA2\u6236\u6216\u4FDD\u96AA\u516C\u53F8...",
         className: "w-full pl-9 pr-3 py-2.5 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-300 focus:border-emerald-400 bg-white"
       }
-    )), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mb-3 text-sm" }, /* @__PURE__ */ React.createElement("span", { className: "flex items-center gap-1 text-stone-500 text-xs w-24 shrink-0" }, /* @__PURE__ */ React.createElement(Calendar, { size: 13 }), " \u6210\u4EA4\u6708\u4EFD\u7BE9\u9078"), /* @__PURE__ */ React.createElement(
+    )), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mb-3 text-sm print-hide" }, /* @__PURE__ */ React.createElement("span", { className: "flex items-center gap-1 text-stone-500 text-xs w-24 shrink-0" }, /* @__PURE__ */ React.createElement(Calendar, { size: 13 }), " \u6210\u4EA4\u6708\u4EFD\u7BE9\u9078"), /* @__PURE__ */ React.createElement(
       "input",
       {
         type: "month",
@@ -511,21 +610,43 @@
         onChange: (e) => setDealMonth(e.target.value),
         className: "border border-stone-300 rounded-lg px-2.5 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-300"
       }
-    ), dealMonth && /* @__PURE__ */ React.createElement("button", { onClick: () => setDealMonth(""), className: "text-xs text-stone-400 hover:text-stone-700 underline" }, "\u6E05\u9664")), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mb-2 text-sm flex-wrap" }, /* @__PURE__ */ React.createElement("span", { className: "text-stone-500 text-xs w-24 shrink-0" }, "\u958B\u767C\u72C0\u614B", /* @__PURE__ */ React.createElement("br", null), /* @__PURE__ */ React.createElement("span", { className: "text-stone-300" }, "\u53EF\u8907\u9078")), /* @__PURE__ */ React.createElement(
+    ), dealMonth && /* @__PURE__ */ React.createElement("button", { onClick: () => setDealMonth(""), className: "text-xs text-stone-400 hover:text-stone-700 underline" }, "\u6E05\u9664")), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mb-6 text-sm flex-wrap print-hide" }, /* @__PURE__ */ React.createElement("span", { className: "text-stone-500 text-xs w-24 shrink-0" }, "\u958B\u767C\u72C0\u614B", /* @__PURE__ */ React.createElement("br", null), /* @__PURE__ */ React.createElement("span", { className: "text-stone-300" }, "\u53EF\u8907\u9078")), /* @__PURE__ */ React.createElement(
       PillGroup,
       {
         value: stageFilter,
         onToggle: (key) => toggleFilter(setStageFilter, stageFilter, key),
         options: [{ key: "\u5168\u90E8", label: "\u5168\u90E8" }, ...STAGES.map((s) => ({ key: s.key, label: s.label })), { key: "\u5DF2\u6D41\u5931", label: "\u5DF2\u6D41\u5931" }]
       }
-    )), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mb-5 text-sm flex-wrap" }, /* @__PURE__ */ React.createElement("span", { className: "text-stone-500 text-xs w-24 shrink-0" }, "\u5BA2\u6236\u5206\u7D1A", /* @__PURE__ */ React.createElement("br", null), /* @__PURE__ */ React.createElement("span", { className: "text-stone-300" }, "\u53EF\u8907\u9078")), /* @__PURE__ */ React.createElement(
+    )), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mb-6 text-sm flex-wrap print-hide" }, /* @__PURE__ */ React.createElement("span", { className: "text-stone-500 text-xs w-24 shrink-0" }, "\u5BA2\u6236\u5206\u7D1A", /* @__PURE__ */ React.createElement("br", null), /* @__PURE__ */ React.createElement("span", { className: "text-stone-300" }, "\u53EF\u8907\u9078")), /* @__PURE__ */ React.createElement(
       PillGroup,
       {
         value: tierFilter,
         onToggle: (key) => toggleFilter(setTierFilter, tierFilter, key),
         options: [{ key: "\u5168\u90E8", label: "\u5168\u90E8" }, ...TIERS.map((t) => ({ key: t.key, label: t.label }))]
       }
-    )), /* @__PURE__ */ React.createElement("div", { className: "grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mb-5" }, /* @__PURE__ */ React.createElement(StatCard, { icon: /* @__PURE__ */ React.createElement(Users, { size: 15 }), label: "\u5BA2\u6236\u6578", value: stats.totalCustomers }), /* @__PURE__ */ React.createElement(StatCard, { icon: /* @__PURE__ */ React.createElement(TrendingUp, { size: 15 }), label: "\u9810\u4F30\u7E3D\u4FDD\u8CBB", value: currency(stats.totalPremium), prefix: "$" }), /* @__PURE__ */ React.createElement(StatCard, { icon: /* @__PURE__ */ React.createElement(Wallet, { size: 15 }), label: "\u5DF2\u6210\u4EA4\u4F63\u91D1", value: currency(stats.commission), prefix: "$", accent: "text-emerald-700", sub: `\u5BE6\u6536 $${currency(stats.received)}` }), /* @__PURE__ */ React.createElement(StatCard, { icon: /* @__PURE__ */ React.createElement(Banknote, { size: 15 }), label: "\u5BE6\u6536\u91D1\u984D", value: currency(stats.received), prefix: "$", accent: "text-emerald-700" }), /* @__PURE__ */ React.createElement(StatCard, { icon: /* @__PURE__ */ React.createElement(FileText, { size: 15 }), label: "\u521D\u6B65\u63A5\u6D3D", value: stats.earlyStage, suffix: "\u4EF6" }), /* @__PURE__ */ React.createElement(StatCard, { icon: /* @__PURE__ */ React.createElement(AlertCircle, { size: 15 }), label: "\u5831\u50F9/\u8B70\u50F9\u4E2D", value: stats.quoting, suffix: "\u4EF6", accent: stats.quoting > 0 ? "text-amber-600" : void 0 }), /* @__PURE__ */ React.createElement(StatCard, { icon: /* @__PURE__ */ React.createElement(Shield, { size: 15 }), label: "\u5DF2\u7C3D\u7D04", value: stats.won, suffix: "\u4EF6", accent: "text-emerald-700" })), todayItems.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "bg-amber-50 border border-amber-200 rounded-xl p-4 mb-5" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1.5 text-sm font-medium text-amber-700 mb-3" }, /* @__PURE__ */ React.createElement(ListTodo, { size: 15 }), " \u4ECA\u65E5\u5F85\u8FA6(", todayItems.length, ")"), /* @__PURE__ */ React.createElement("div", { className: "space-y-1.5" }, todayItems.map((it, idx) => /* @__PURE__ */ React.createElement(
+    )), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mb-2 text-sm flex-wrap print-hide" }, /* @__PURE__ */ React.createElement("span", { className: "text-stone-500 text-xs w-24 shrink-0" }, "\u7E23\u5E02\u7BE9\u9078"), /* @__PURE__ */ React.createElement(
+      "select",
+      {
+        value: cityFilter,
+        onChange: (e) => setCityFilter(e.target.value),
+        className: "border border-stone-300 rounded-lg px-2.5 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-300"
+      },
+      /* @__PURE__ */ React.createElement("option", { value: "" }, "\u5168\u90E8\u7E23\u5E02"),
+      TAIWAN_CITIES.map((city) => /* @__PURE__ */ React.createElement("option", { key: city, value: city }, city))
+    ), (cityFilter || tierFilter.length > 0 || stageFilter.length > 0 || query || dealMonth) && /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        onClick: () => {
+          setCityFilter("");
+          setTierFilter([]);
+          setStageFilter([]);
+          setQuery("");
+          setDealMonth("");
+        },
+        className: "text-xs text-stone-400 hover:text-stone-700 underline"
+      },
+      "\u986F\u793A\u5168\u90E8\u5BA2\u6236(\u6E05\u9664\u7BE9\u9078)"
+    )), /* @__PURE__ */ React.createElement("div", { className: "mb-5" }), /* @__PURE__ */ React.createElement("div", { className: "grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mb-5" }, /* @__PURE__ */ React.createElement(StatCard, { icon: /* @__PURE__ */ React.createElement(Users, { size: 15 }), label: "\u5BA2\u6236\u6578", value: stats.totalCustomers }), /* @__PURE__ */ React.createElement(StatCard, { icon: /* @__PURE__ */ React.createElement(TrendingUp, { size: 15 }), label: "\u9810\u4F30\u7E3D\u4FDD\u8CBB", value: currency(stats.totalPremium), prefix: "$" }), /* @__PURE__ */ React.createElement(StatCard, { icon: /* @__PURE__ */ React.createElement(Wallet, { size: 15 }), label: "\u5DF2\u6210\u4EA4\u4F63\u91D1", value: currency(stats.commission), prefix: "$", accent: "text-emerald-700", sub: `\u5BE6\u6536 $${currency(stats.received)}` }), /* @__PURE__ */ React.createElement(StatCard, { icon: /* @__PURE__ */ React.createElement(Banknote, { size: 15 }), label: "\u5BE6\u6536\u91D1\u984D", value: currency(stats.received), prefix: "$", accent: "text-emerald-700" }), /* @__PURE__ */ React.createElement(StatCard, { icon: /* @__PURE__ */ React.createElement(FileText, { size: 15 }), label: "\u521D\u6B65\u63A5\u6D3D", value: stats.earlyStage, suffix: "\u4EF6" }), /* @__PURE__ */ React.createElement(StatCard, { icon: /* @__PURE__ */ React.createElement(AlertCircle, { size: 15 }), label: "\u5831\u50F9/\u8B70\u50F9\u4E2D", value: stats.quoting, suffix: "\u4EF6", accent: stats.quoting > 0 ? "text-amber-600" : void 0 }), /* @__PURE__ */ React.createElement(StatCard, { icon: /* @__PURE__ */ React.createElement(Shield, { size: 15 }), label: "\u5DF2\u7C3D\u7D04", value: stats.won, suffix: "\u4EF6", accent: "text-emerald-700" })), todayItems.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "bg-amber-50 border border-amber-200 rounded-xl p-4 mb-5" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1.5 text-sm font-medium text-amber-700 mb-3" }, /* @__PURE__ */ React.createElement(ListTodo, { size: 15 }), " \u4ECA\u65E5\u5F85\u8FA6(", todayItems.length, ")"), /* @__PURE__ */ React.createElement("div", { className: "space-y-1.5" }, todayItems.map((it, idx) => /* @__PURE__ */ React.createElement(
       "button",
       {
         key: idx,
@@ -596,7 +717,7 @@
         /* @__PURE__ */ React.createElement(FileText, { size: 11, className: "shrink-0" }),
         c.lastActivity ? /* @__PURE__ */ React.createElement(React.Fragment, null, c.lastActivityDate && /* @__PURE__ */ React.createElement("span", { className: `shrink-0 ${actTone ? actTone.cls : ""}` }, c.lastActivityDate), /* @__PURE__ */ React.createElement("span", { className: "truncate" }, c.lastActivity)) : /* @__PURE__ */ React.createElement("span", { className: "text-stone-400 group-hover:text-emerald-700" }, "\u9EDE\u6B64\u66F4\u65B0\u806F\u7E6B\u9032\u5EA6\u2026"),
         /* @__PURE__ */ React.createElement(Pencil, { size: 10, className: "opacity-0 group-hover:opacity-100 shrink-0" })
-      )), /* @__PURE__ */ React.createElement("div", { className: "flex flex-col items-end gap-1 shrink-0", onClick: (e) => e.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1.5" }, tierInfo && /* @__PURE__ */ React.createElement("span", { className: `text-xs font-medium px-2 py-0.5 rounded-full ${tierInfo.bg} ${tierInfo.text}` }, c.tier), stageInfo && /* @__PURE__ */ React.createElement("span", { className: `text-xs font-medium px-2 py-0.5 rounded-full ${stageInfo.bgSoft} ${stageInfo.text}` }, stageInfo.label)), custPremium > 0 && /* @__PURE__ */ React.createElement("div", { className: "text-sm font-serif font-semibold text-stone-700" }, "$", currency(custPremium)), custCommission > 0 && /* @__PURE__ */ React.createElement("div", { className: "text-xs text-stone-400" }, "\u4F63\u91D1 $", currency(custCommission), custReceived > 0 && /* @__PURE__ */ React.createElement("span", { className: "text-emerald-600" }, " \xB7 \u5DF2\u6536 $", currency(custReceived))), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1 mt-1" }, /* @__PURE__ */ React.createElement("button", { onClick: () => openAddPolicy(c.id), title: "\u65B0\u589E\u4FDD\u55AE", className: "p-1.5 text-stone-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-md" }, /* @__PURE__ */ React.createElement(Plus, { size: 13 })), /* @__PURE__ */ React.createElement("button", { onClick: () => openEditCustomer(c), title: "\u7DE8\u8F2F\u5BA2\u6236", className: "p-1.5 text-stone-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-md" }, /* @__PURE__ */ React.createElement(Pencil, { size: 13 })), /* @__PURE__ */ React.createElement("button", { onClick: () => removeCustomer(c.id), title: "\u522A\u9664\u5BA2\u6236", className: "p-1.5 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded-md" }, /* @__PURE__ */ React.createElement(Trash2, { size: 13 }))))), isOpen && /* @__PURE__ */ React.createElement("div", { className: "border-t border-stone-100" }, c.note && /* @__PURE__ */ React.createElement("div", { className: "px-4 py-2 text-xs text-stone-500 bg-stone-50 border-b border-stone-100" }, "\u5099\u8A3B:", c.note), (c.policies || []).length === 0 ? /* @__PURE__ */ React.createElement("div", { className: "px-4 py-4 text-xs text-stone-400" }, "\u5C1A\u7121\u4FDD\u55AE,\u9EDE\u4E0A\u65B9 + \u65B0\u589E\u4FDD\u55AE") : /* @__PURE__ */ React.createElement("div", { className: "overflow-x-auto" }, /* @__PURE__ */ React.createElement("table", { className: "w-full text-sm" }, /* @__PURE__ */ React.createElement("thead", null, /* @__PURE__ */ React.createElement("tr", { className: "text-left text-xs text-stone-400 border-b border-stone-100" }, /* @__PURE__ */ React.createElement("th", { className: "px-4 py-2 font-medium" }, "\u96AA\u7A2E"), /* @__PURE__ */ React.createElement("th", { className: "px-4 py-2 font-medium" }, "\u4FDD\u96AA\u516C\u53F8"), /* @__PURE__ */ React.createElement("th", { className: "px-4 py-2 font-medium" }, "\u4FDD\u984D/\u4FDD\u8CBB"), /* @__PURE__ */ React.createElement("th", { className: "px-4 py-2 font-medium" }, "\u968E\u6BB5"), /* @__PURE__ */ React.createElement("th", { className: "px-4 py-2 font-medium" }, "\u5230\u671F\u65E5"), /* @__PURE__ */ React.createElement("th", { className: "px-4 py-2 font-medium" }, "\u7E73\u8CBB\u65E5"), /* @__PURE__ */ React.createElement("th", { className: "px-4 py-2 font-medium" }, "\u53D7\u76CA\u4EBA"), /* @__PURE__ */ React.createElement("th", { className: "px-4 py-2 font-medium" }, "\u8ACB\u6B3E/\u6536\u6B3E"), /* @__PURE__ */ React.createElement("th", { className: "px-4 py-2 font-medium text-right" }, "\u64CD\u4F5C"))), /* @__PURE__ */ React.createElement("tbody", null, c.policies.map((p) => {
+      )), /* @__PURE__ */ React.createElement("div", { className: "flex flex-col items-end gap-1 shrink-0", onClick: (e) => e.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1.5" }, tierInfo && /* @__PURE__ */ React.createElement("span", { className: `text-xs font-medium px-2 py-0.5 rounded-full ${tierInfo.bg} ${tierInfo.text}` }, c.tier), stageInfo && /* @__PURE__ */ React.createElement("span", { className: `text-xs font-medium px-2 py-0.5 rounded-full ${stageInfo.bgSoft} ${stageInfo.text}` }, stageInfo.label)), custPremium > 0 && /* @__PURE__ */ React.createElement("div", { className: "text-sm font-serif font-semibold text-stone-700" }, "$", currency(custPremium)), custCommission > 0 && /* @__PURE__ */ React.createElement("div", { className: "text-xs text-stone-400" }, "\u4F63\u91D1 $", currency(custCommission), custReceived > 0 && /* @__PURE__ */ React.createElement("span", { className: "text-emerald-600" }, " \xB7 \u5DF2\u6536 $", currency(custReceived))), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mt-1 print-hide" }, /* @__PURE__ */ React.createElement("button", { onClick: () => openAddPolicy(c.id), title: "\u65B0\u589E\u4FDD\u55AE", className: "p-2.5 text-stone-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg" }, /* @__PURE__ */ React.createElement(Plus, { size: 18 })), /* @__PURE__ */ React.createElement("button", { onClick: () => openEditCustomer(c), title: "\u7DE8\u8F2F\u5BA2\u6236", className: "p-2.5 text-stone-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg" }, /* @__PURE__ */ React.createElement(Pencil, { size: 18 })), /* @__PURE__ */ React.createElement("button", { onClick: () => confirmRemoveCustomer(c), title: "\u522A\u9664\u5BA2\u6236", className: "p-2.5 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg" }, /* @__PURE__ */ React.createElement(Trash2, { size: 18 }))))), isOpen && /* @__PURE__ */ React.createElement("div", { className: "border-t border-stone-100" }, c.note && /* @__PURE__ */ React.createElement("div", { className: "px-4 py-2 text-xs text-stone-500 bg-stone-50 border-b border-stone-100" }, "\u5099\u8A3B:", c.note), (c.policies || []).length === 0 ? /* @__PURE__ */ React.createElement("div", { className: "px-4 py-4 text-xs text-stone-400" }, "\u5C1A\u7121\u4FDD\u55AE,\u9EDE\u4E0A\u65B9 + \u65B0\u589E\u4FDD\u55AE") : /* @__PURE__ */ React.createElement("div", { className: "overflow-x-auto" }, /* @__PURE__ */ React.createElement("table", { className: "w-full text-sm" }, /* @__PURE__ */ React.createElement("thead", null, /* @__PURE__ */ React.createElement("tr", { className: "text-left text-xs text-stone-400 border-b border-stone-100" }, /* @__PURE__ */ React.createElement("th", { className: "px-4 py-2 font-medium" }, "\u96AA\u7A2E"), /* @__PURE__ */ React.createElement("th", { className: "px-4 py-2 font-medium" }, "\u4FDD\u96AA\u516C\u53F8"), /* @__PURE__ */ React.createElement("th", { className: "px-4 py-2 font-medium" }, "\u4FDD\u984D/\u4FDD\u8CBB"), /* @__PURE__ */ React.createElement("th", { className: "px-4 py-2 font-medium" }, "\u968E\u6BB5"), /* @__PURE__ */ React.createElement("th", { className: "px-4 py-2 font-medium" }, "\u5230\u671F\u65E5"), /* @__PURE__ */ React.createElement("th", { className: "px-4 py-2 font-medium" }, "\u7E73\u8CBB\u65E5"), /* @__PURE__ */ React.createElement("th", { className: "px-4 py-2 font-medium" }, "\u53D7\u76CA\u4EBA"), /* @__PURE__ */ React.createElement("th", { className: "px-4 py-2 font-medium" }, "\u8ACB\u6B3E/\u6536\u6B3E"), /* @__PURE__ */ React.createElement("th", { className: "px-4 py-2 font-medium text-right print-hide" }, "\u64CD\u4F5C"))), /* @__PURE__ */ React.createElement("tbody", null, c.policies.map((p) => {
         const sInfo = STAGES.find((s) => s.key === p.stage) || STAGES[0];
         const dt = dueTone(p.nextDueDate, p.lost, expiryThresholdOf(p.category));
         const pt = p.category === "\u58FD\u96AA" ? dueTone(p.paymentDate, p.lost, 30) : null;
@@ -620,9 +741,9 @@
             },
             BILLING_STATUS.map((b) => /* @__PURE__ */ React.createElement("option", { key: b.key, value: b.key }, b.key))
           );
-        })(), /* @__PURE__ */ React.createElement(ChevronDown, { size: 11, className: "pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" }))), /* @__PURE__ */ React.createElement("td", { className: "px-4 py-2.5" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-end gap-1" }, /* @__PURE__ */ React.createElement("button", { onClick: () => togglePolicyLost(c.id, p.id), title: p.lost ? "\u6062\u5FA9\u8FFD\u8E64" : "\u6A19\u8A18\u6D41\u5931", className: "p-1.5 text-stone-400 hover:text-stone-700 hover:bg-stone-100 rounded-md" }, /* @__PURE__ */ React.createElement(Ban, { size: 13 })), /* @__PURE__ */ React.createElement("button", { onClick: () => openEditPolicy(c.id, p), title: "\u7DE8\u8F2F", className: "p-1.5 text-stone-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-md" }, /* @__PURE__ */ React.createElement(Pencil, { size: 13 })), /* @__PURE__ */ React.createElement("button", { onClick: () => removePolicy(c.id, p.id), title: "\u522A\u9664", className: "p-1.5 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded-md" }, /* @__PURE__ */ React.createElement(Trash2, { size: 13 })))));
+        })(), /* @__PURE__ */ React.createElement(ChevronDown, { size: 11, className: "pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" }))), /* @__PURE__ */ React.createElement("td", { className: "px-4 py-2.5 print-hide" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-end gap-2" }, /* @__PURE__ */ React.createElement("button", { onClick: () => togglePolicyLost(c.id, p.id), title: p.lost ? "\u6062\u5FA9\u8FFD\u8E64" : "\u6A19\u8A18\u6D41\u5931", className: "p-2.5 text-stone-400 hover:text-stone-700 hover:bg-stone-100 rounded-lg" }, /* @__PURE__ */ React.createElement(Ban, { size: 17 })), /* @__PURE__ */ React.createElement("button", { onClick: () => openEditPolicy(c.id, p), title: "\u7DE8\u8F2F", className: "p-2.5 text-stone-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg" }, /* @__PURE__ */ React.createElement(Pencil, { size: 17 })), /* @__PURE__ */ React.createElement("button", { onClick: () => confirmRemovePolicy(c.id, p), title: "\u522A\u9664", className: "p-2.5 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg" }, /* @__PURE__ */ React.createElement(Trash2, { size: 17 })))));
       }))))));
-    }))), showCustForm && /* @__PURE__ */ React.createElement("div", { className: "fixed inset-0 bg-stone-900/40 flex items-center justify-center p-4 z-50", onClick: () => setShowCustForm(false) }, /* @__PURE__ */ React.createElement("div", { className: "bg-white rounded-xl w-full max-w-md p-6 shadow-xl max-h-[90vh] overflow-y-auto", onClick: (e) => e.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-4" }, /* @__PURE__ */ React.createElement("h2", { className: "text-base font-semibold text-stone-800" }, editingCustId ? "\u7DE8\u8F2F\u5BA2\u6236" : "\u65B0\u589E\u5BA2\u6236"), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowCustForm(false), className: "text-stone-400 hover:text-stone-700" }, /* @__PURE__ */ React.createElement(X, { size: 18 }))), /* @__PURE__ */ React.createElement("form", { onSubmit: submitCustomer, className: "space-y-3" }, /* @__PURE__ */ React.createElement("div", { className: "grid grid-cols-2 gap-3" }, /* @__PURE__ */ React.createElement(Field, { label: "\u59D3\u540D *" }, /* @__PURE__ */ React.createElement(
+    }))), showCustForm && /* @__PURE__ */ React.createElement("div", { className: "fixed inset-0 bg-stone-900/40 flex items-center justify-center p-4 z-50" }, /* @__PURE__ */ React.createElement("div", { className: "bg-white rounded-xl w-full max-w-md p-6 shadow-xl max-h-[90vh] overflow-y-auto" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-4" }, /* @__PURE__ */ React.createElement("h2", { className: "text-base font-semibold text-stone-800" }, editingCustId ? "\u7DE8\u8F2F\u5BA2\u6236" : "\u65B0\u589E\u5BA2\u6236"), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowCustForm(false), className: "p-2 -m-2 text-stone-400 hover:text-stone-700" }, /* @__PURE__ */ React.createElement(X, { size: 20 }))), /* @__PURE__ */ React.createElement("form", { onSubmit: submitCustomer, className: "space-y-3" }, /* @__PURE__ */ React.createElement("div", { className: "grid grid-cols-2 gap-3" }, /* @__PURE__ */ React.createElement(Field, { label: "\u59D3\u540D *" }, /* @__PURE__ */ React.createElement(
       "input",
       {
         required: true,
@@ -684,7 +805,50 @@
         placeholder: "\u4F8B:\u9673\u7F8E\u73B2",
         className: "w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-300"
       }
-    ))), /* @__PURE__ */ React.createElement("div", { className: "grid grid-cols-[1fr_140px] gap-3" }, /* @__PURE__ */ React.createElement(Field, { label: "\u6700\u65B0\u52D5\u614B" }, /* @__PURE__ */ React.createElement(
+    ))), /* @__PURE__ */ React.createElement("div", { className: "grid grid-cols-2 gap-3" }, /* @__PURE__ */ React.createElement(Field, { label: "\u8EAB\u5206\u8B49\u5B57\u865F" }, /* @__PURE__ */ React.createElement(
+      "input",
+      {
+        value: custForm.idNumber,
+        onChange: (e) => setCustForm(__spreadProps(__spreadValues({}, custForm), { idNumber: e.target.value })),
+        placeholder: "\u4F8B:A123456789",
+        className: "w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-300"
+      }
+    )), /* @__PURE__ */ React.createElement(Field, { label: "DISC \u6027\u683C" }, /* @__PURE__ */ React.createElement(
+      "select",
+      {
+        value: custForm.discType,
+        onChange: (e) => setCustForm(__spreadProps(__spreadValues({}, custForm), { discType: e.target.value })),
+        className: "w-full px-3 py-2 text-sm border border-stone-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-300"
+      },
+      /* @__PURE__ */ React.createElement("option", { value: "" }, "\u672A\u8A55\u4F30"),
+      DISC_TYPES.map((d) => /* @__PURE__ */ React.createElement("option", { key: d.key, value: d.key }, d.label))
+    ))), /* @__PURE__ */ React.createElement("div", { className: "grid grid-cols-[140px_1fr] gap-3" }, /* @__PURE__ */ React.createElement(Field, { label: "\u7E23\u5E02" }, /* @__PURE__ */ React.createElement(
+      "select",
+      {
+        value: custForm.addressCity,
+        onChange: (e) => setCustForm(__spreadProps(__spreadValues({}, custForm), { addressCity: e.target.value })),
+        className: "w-full px-3 py-2 text-sm border border-stone-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-300"
+      },
+      /* @__PURE__ */ React.createElement("option", { value: "" }, "\u8ACB\u9078\u64C7"),
+      TAIWAN_CITIES.map((city) => /* @__PURE__ */ React.createElement("option", { key: city, value: city }, city))
+    )), /* @__PURE__ */ React.createElement(Field, { label: "\u8857\u9053\u5730\u5740" }, /* @__PURE__ */ React.createElement(
+      "input",
+      {
+        value: custForm.addressStreet,
+        onChange: (e) => setCustForm(__spreadProps(__spreadValues({}, custForm), { addressStreet: e.target.value })),
+        placeholder: "\u4F8B:\u5FE0\u5B5D\u6771\u8DEF\u56DB\u6BB51\u865F",
+        className: "w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-300"
+      }
+    ))), /* @__PURE__ */ React.createElement(Field, { label: "\u4FDD\u55AE\u7F3A\u53E3(\u73FE\u6709\u4FDD\u969C\u5206\u6790/\u5EFA\u8B70\u52A0\u4FDD\u65B9\u5411)" }, /* @__PURE__ */ React.createElement(
+      "textarea",
+      {
+        rows: 2,
+        value: custForm.policyGap,
+        onChange: (e) => setCustForm(__spreadProps(__spreadValues({}, custForm), { policyGap: e.target.value })),
+        placeholder: "\u4F8B:\u91AB\u7642\u96AA\u4FDD\u984D\u4E0D\u8DB3\u3001\u7121\u5931\u80FD\u6276\u52A9\u96AA",
+        className: "w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-300 resize-none"
+      }
+    )), /* @__PURE__ */ React.createElement("div", { className: "grid grid-cols-[1fr_140px] gap-3" }, /* @__PURE__ */ React.createElement(Field, { label: "\u6700\u65B0\u52D5\u614B" }, /* @__PURE__ */ React.createElement(
       "input",
       {
         value: custForm.lastActivity,
@@ -716,7 +880,7 @@
         onChange: (e) => setCustForm(__spreadProps(__spreadValues({}, custForm), { note: e.target.value })),
         className: "w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-300 resize-none"
       }
-    )), /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 pt-2" }, /* @__PURE__ */ React.createElement("button", { type: "button", onClick: () => setShowCustForm(false), className: "flex-1 py-2 text-sm rounded-lg border border-stone-300 text-stone-600 hover:bg-stone-50" }, "\u53D6\u6D88"), /* @__PURE__ */ React.createElement("button", { type: "submit", className: "flex-1 py-2 text-sm rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-medium" }, editingCustId ? "\u5132\u5B58\u8B8A\u66F4" : "\u65B0\u589E"))))), showPolForm && /* @__PURE__ */ React.createElement("div", { className: "fixed inset-0 bg-stone-900/40 flex items-center justify-center p-4 z-50", onClick: () => setShowPolForm(false) }, /* @__PURE__ */ React.createElement("div", { className: "bg-white rounded-xl w-full max-w-md p-6 shadow-xl max-h-[90vh] overflow-y-auto", onClick: (e) => e.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-4" }, /* @__PURE__ */ React.createElement("h2", { className: "text-base font-semibold text-stone-800" }, editingPolId ? "\u7DE8\u8F2F\u4FDD\u55AE" : "\u65B0\u589E\u4FDD\u55AE"), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowPolForm(false), className: "text-stone-400 hover:text-stone-700" }, /* @__PURE__ */ React.createElement(X, { size: 18 }))), /* @__PURE__ */ React.createElement("form", { onSubmit: submitPolicy, className: "space-y-3" }, /* @__PURE__ */ React.createElement("div", { className: "grid grid-cols-2 gap-3" }, /* @__PURE__ */ React.createElement(Field, { label: "\u4FDD\u96AA\u5225" }, /* @__PURE__ */ React.createElement(
+    )), /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 pt-2" }, /* @__PURE__ */ React.createElement("button", { type: "button", onClick: () => setShowCustForm(false), className: "flex-1 py-3 text-sm rounded-lg border border-stone-300 text-stone-600 hover:bg-stone-50" }, "\u53D6\u6D88"), /* @__PURE__ */ React.createElement("button", { type: "submit", className: "flex-1 py-3 text-sm rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-medium" }, editingCustId ? "\u5132\u5B58\u8B8A\u66F4" : "\u65B0\u589E"))))), showPolForm && /* @__PURE__ */ React.createElement("div", { className: "fixed inset-0 bg-stone-900/40 flex items-center justify-center p-4 z-50" }, /* @__PURE__ */ React.createElement("div", { className: "bg-white rounded-xl w-full max-w-md p-6 shadow-xl max-h-[90vh] overflow-y-auto" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-4" }, /* @__PURE__ */ React.createElement("h2", { className: "text-base font-semibold text-stone-800" }, editingPolId ? "\u7DE8\u8F2F\u4FDD\u55AE" : "\u65B0\u589E\u4FDD\u55AE"), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowPolForm(false), className: "p-2 -m-2 text-stone-400 hover:text-stone-700" }, /* @__PURE__ */ React.createElement(X, { size: 20 }))), /* @__PURE__ */ React.createElement("form", { onSubmit: submitPolicy, className: "space-y-3" }, /* @__PURE__ */ React.createElement("div", { className: "grid grid-cols-2 gap-3" }, /* @__PURE__ */ React.createElement(Field, { label: "\u4FDD\u96AA\u5225" }, /* @__PURE__ */ React.createElement(
       "select",
       {
         value: polForm.category,
@@ -834,17 +998,17 @@
         onChange: (e) => setPolForm(__spreadProps(__spreadValues({}, polForm), { invoiceDate: e.target.value })),
         className: "w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-300"
       }
-    ))), /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 pt-2" }, /* @__PURE__ */ React.createElement("button", { type: "button", onClick: () => setShowPolForm(false), className: "flex-1 py-2 text-sm rounded-lg border border-stone-300 text-stone-600 hover:bg-stone-50" }, "\u53D6\u6D88"), /* @__PURE__ */ React.createElement("button", { type: "submit", className: "flex-1 py-2 text-sm rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-medium" }, editingPolId ? "\u5132\u5B58\u8B8A\u66F4" : "\u65B0\u589E\u4FDD\u55AE"))))));
+    ))), /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 pt-2" }, /* @__PURE__ */ React.createElement("button", { type: "button", onClick: () => setShowPolForm(false), className: "flex-1 py-3 text-sm rounded-lg border border-stone-300 text-stone-600 hover:bg-stone-50" }, "\u53D6\u6D88"), /* @__PURE__ */ React.createElement("button", { type: "submit", className: "flex-1 py-3 text-sm rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-medium" }, editingPolId ? "\u5132\u5B58\u8B8A\u66F4" : "\u65B0\u589E\u4FDD\u55AE"))))));
   }
   function PillGroup({ value, onToggle, options }) {
-    return /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1.5 flex-wrap" }, options.map((o) => {
+    return /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-3 flex-wrap" }, options.map((o) => {
       const active = o.key === "\u5168\u90E8" ? value.length === 0 : value.includes(o.key);
       return /* @__PURE__ */ React.createElement(
         "button",
         {
           key: o.key,
           onClick: () => onToggle(o.key),
-          className: `flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-full border transition-colors ${active ? "bg-emerald-700 border-emerald-700 text-white" : "bg-white border-stone-300 text-stone-600 hover:bg-stone-100"}`
+          className: `flex items-center gap-1.5 text-xs px-3 py-2 rounded-full border transition-colors ${active ? "bg-emerald-700 border-emerald-700 text-white" : "bg-white border-stone-300 text-stone-600 hover:bg-stone-100"}`
         },
         /* @__PURE__ */ React.createElement("span", { className: `w-1.5 h-1.5 rounded-full ${active ? "bg-white" : "bg-stone-300"}` }),
         o.label
