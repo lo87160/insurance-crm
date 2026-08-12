@@ -551,6 +551,28 @@ ${p.type}${p.company ? "(" + p.company + ")" : ""}
       a.click();
       URL.revokeObjectURL(url);
     }
+    function openAttachment(name, dataUrl) {
+      try {
+        const parts = dataUrl.split(",");
+        const meta = parts[0];
+        const mimeMatch = meta.match(/:(.*?);/);
+        const mime = mimeMatch ? mimeMatch[1] : "application/pdf";
+        const binary = atob(parts[1]);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        const blob = new Blob([bytes], { type: mime });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = name;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 2e3);
+      } catch (e) {
+        setSaveErr("\u9644\u4EF6\u958B\u555F\u5931\u6557,\u8ACB\u91CD\u65B0\u4E0A\u50B3\u9019\u4EFD PDF");
+      }
+    }
     function handleExportJSON() {
       try {
         downloadBlob(JSON.stringify(customers, null, 2), `\u4FDD\u96AA\u5BA2\u6236\u8CC7\u6599_${todayStr()}.json`, "application/json");
@@ -861,7 +883,7 @@ ${p.type}${p.company ? "(" + p.company + ")" : ""}
         const dt = dueTone(p.nextDueDate, p.lost, expiryThresholdOf(p.category));
         const pt = p.category === "\u58FD\u96AA" ? dueTone(p.paymentDate, p.lost, 30) : null;
         const anv = !p.lost ? nextAnniversary(p.effectiveDate) : null;
-        return /* @__PURE__ */ React.createElement("tr", { key: p.id, className: `border-b border-stone-50 last:border-0 ${p.lost ? "opacity-50" : ""}` }, /* @__PURE__ */ React.createElement("td", { className: "px-4 py-2.5" }, /* @__PURE__ */ React.createElement("div", { className: "text-stone-800" }, p.type), /* @__PURE__ */ React.createElement("div", { className: "text-xs text-stone-400" }, p.category, p.payFreq ? ` \xB7 ${p.payFreq}` : ""), p.insured && /* @__PURE__ */ React.createElement("div", { className: "text-xs text-stone-400" }, "\u88AB\u4FDD:", p.insured), p.attachmentName && /* @__PURE__ */ React.createElement("a", { href: p.attachmentData, download: p.attachmentName, className: "text-xs text-emerald-600 underline" }, "\u{1F4C4} ", p.attachmentName), anv && anv.diff <= 30 && /* @__PURE__ */ React.createElement("div", { className: "text-xs text-emerald-600" }, "\u{1F389} \u7B2C", anv.years, "\u9031\u5E74 ", anv.diff === 0 ? "\u5C31\u662F\u4ECA\u5929" : `${anv.diff}\u5929\u5F8C`)), /* @__PURE__ */ React.createElement("td", { className: "px-4 py-2.5 text-stone-500" }, p.company || "\u2014"), /* @__PURE__ */ React.createElement("td", { className: "px-4 py-2.5 font-serif text-stone-700" }, p.insuredAmount ? `\u4FDD\u984D $${currency(p.insuredAmount)}` : "\u2014", /* @__PURE__ */ React.createElement("div", { className: "text-xs text-stone-400 font-sans" }, p.premium ? `\u4FDD\u8CBB $${currency(p.premium)}` : "")), /* @__PURE__ */ React.createElement("td", { className: "px-4 py-2.5" }, p.lost ? /* @__PURE__ */ React.createElement("span", { className: "inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-stone-200 text-stone-500" }, /* @__PURE__ */ React.createElement(Ban, { size: 11 }), " \u5DF2\u6D41\u5931") : /* @__PURE__ */ React.createElement("div", { className: "relative inline-block" }, /* @__PURE__ */ React.createElement(
+        return /* @__PURE__ */ React.createElement("tr", { key: p.id, className: `border-b border-stone-50 last:border-0 ${p.lost ? "opacity-50" : ""}` }, /* @__PURE__ */ React.createElement("td", { className: "px-4 py-2.5" }, /* @__PURE__ */ React.createElement("div", { className: "text-stone-800" }, p.type), /* @__PURE__ */ React.createElement("div", { className: "text-xs text-stone-400" }, p.category, p.payFreq ? ` \xB7 ${p.payFreq}` : ""), p.insured && /* @__PURE__ */ React.createElement("div", { className: "text-xs text-stone-400" }, "\u88AB\u4FDD:", p.insured), p.attachmentName && /* @__PURE__ */ React.createElement("button", { type: "button", onClick: () => openAttachment(p.attachmentName, p.attachmentData), className: "text-xs text-emerald-600 underline" }, "\u{1F4C4} ", p.attachmentName), anv && anv.diff <= 30 && /* @__PURE__ */ React.createElement("div", { className: "text-xs text-emerald-600" }, "\u{1F389} \u7B2C", anv.years, "\u9031\u5E74 ", anv.diff === 0 ? "\u5C31\u662F\u4ECA\u5929" : `${anv.diff}\u5929\u5F8C`)), /* @__PURE__ */ React.createElement("td", { className: "px-4 py-2.5 text-stone-500" }, p.company || "\u2014"), /* @__PURE__ */ React.createElement("td", { className: "px-4 py-2.5 font-serif text-stone-700" }, p.insuredAmount ? `\u4FDD\u984D $${currency(p.insuredAmount)}` : "\u2014", /* @__PURE__ */ React.createElement("div", { className: "text-xs text-stone-400 font-sans" }, p.premium ? `\u4FDD\u8CBB $${currency(p.premium)}` : "")), /* @__PURE__ */ React.createElement("td", { className: "px-4 py-2.5" }, p.lost ? /* @__PURE__ */ React.createElement("span", { className: "inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-stone-200 text-stone-500" }, /* @__PURE__ */ React.createElement(Ban, { size: 11 }), " \u5DF2\u6D41\u5931") : /* @__PURE__ */ React.createElement("div", { className: "relative inline-block" }, /* @__PURE__ */ React.createElement(
           "select",
           {
             value: p.stage,
