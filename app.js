@@ -1209,4 +1209,3 @@ ${p.type}${p.company ? "(" + p.company + ")" : ""}
   }
   ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(InsuranceTracker));
 })();
-
