@@ -171,14 +171,14 @@
     let minDiff = null;
     let overdue = false;
     (c.policies || []).filter((p) => !p.lost).forEach((p) => {
-      if (p.nextDueDate) {
+      if (p.nextDueDate && p.nextDuePaidFor !== p.nextDueDate) {
         const d = daysUntil(p.nextDueDate);
         if (d <= expiryThresholdOf(p.category)) {
           if (minDiff === null || d < minDiff) minDiff = d;
           if (d < 0) overdue = true;
         }
       }
-      if (p.category === "\u58FD\u96AA" && p.paymentDate) {
+      if (p.category === "\u58FD\u96AA" && p.paymentDate && p.paymentPaidFor !== p.paymentDate) {
         const d2 = daysUntil(p.paymentDate);
         if (d2 <= 30) {
           if (minDiff === null || d2 < minDiff) minDiff = d2;
@@ -530,7 +530,10 @@ ${p.type}${p.company ? "(" + p.company + ")" : ""}
     function quickBillingChange(custId, polId, billingStatus) {
       setCustomers((cs) => cs.map((c) => c.id === custId ? __spreadProps(__spreadValues({}, c), { policies: c.policies.map((p) => p.id === polId ? __spreadProps(__spreadValues({}, p), { billingStatus }) : p) }) : c));
     }
-    function markPolicyPaid(custId, polId, dateType) {
+    function markPolicyPaid(custId, polId, dateType, custName, type) {
+      if (!window.confirm(`\u78BA\u8A8D\u300C${custName}\u300D\u7684\u300C${type}\u300D\u5DF2\u7D93\u7E73\u8CBB\u4E86\u55CE?
+
+\u78BA\u8A8D\u5F8C\u6703\u5F9E\u903E\u671F\u6E05\u55AE\u79FB\u9664,\u4E26\u8A18\u9304\u7E73\u8CBB\u78BA\u8A8D\u65E5\u671F\u3002`)) return;
       const today = todayStr();
       setCustomers((cs) => cs.map((c) => c.id === custId ? __spreadProps(__spreadValues({}, c), { policies: c.policies.map((p) => {
         if (p.id !== polId) return p;
@@ -760,7 +763,7 @@ ${p.type}${p.company ? "(" + p.company + ")" : ""}
       ), it.dateType && /* @__PURE__ */ React.createElement(
         "button",
         {
-          onClick: () => markPolicyPaid(it.custId, it.polId, it.dateType),
+          onClick: () => markPolicyPaid(it.custId, it.polId, it.dateType, it.custName, it.type),
           title: "\u6A19\u8A18\u5DF2\u7E73\u8CBB",
           className: "flex items-center gap-1 text-xs px-2.5 py-2 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
         },
@@ -816,7 +819,27 @@ ${p.type}${p.company ? "(" + p.company + ")" : ""}
         /* @__PURE__ */ React.createElement(FileText, { size: 11, className: "shrink-0" }),
         c.lastActivity ? /* @__PURE__ */ React.createElement(React.Fragment, null, c.lastActivityDate && /* @__PURE__ */ React.createElement("span", { className: `shrink-0 ${actTone ? actTone.cls : ""}` }, c.lastActivityDate), /* @__PURE__ */ React.createElement("span", { className: "truncate" }, c.lastActivity)) : /* @__PURE__ */ React.createElement("span", { className: "text-stone-400 group-hover:text-emerald-700" }, "\u9EDE\u6B64\u66F4\u65B0\u806F\u7E6B\u9032\u5EA6\u2026"),
         /* @__PURE__ */ React.createElement(Pencil, { size: 10, className: "opacity-0 group-hover:opacity-100 shrink-0" })
-      )), /* @__PURE__ */ React.createElement("div", { className: "flex flex-col items-end gap-1 shrink-0", onClick: (e) => e.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1.5" }, tierInfo && /* @__PURE__ */ React.createElement("span", { className: `text-xs font-medium px-2 py-0.5 rounded-full ${tierInfo.bg} ${tierInfo.text}` }, c.tier), stageInfo && /* @__PURE__ */ React.createElement("span", { className: `text-xs font-medium px-2 py-0.5 rounded-full ${stageInfo.bgSoft} ${stageInfo.text}` }, stageInfo.label)), custPremium > 0 && /* @__PURE__ */ React.createElement("div", { className: "text-sm font-serif font-semibold text-stone-700" }, "$", currency(custPremium)), custCommission > 0 && /* @__PURE__ */ React.createElement("div", { className: "text-xs text-stone-400" }, "\u4F63\u91D1 $", currency(custCommission), custReceived > 0 && /* @__PURE__ */ React.createElement("span", { className: "text-emerald-600" }, " \xB7 \u5DF2\u6536 $", currency(custReceived))), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mt-1 print-hide" }, /* @__PURE__ */ React.createElement("button", { onClick: () => openAddPolicy(c.id), title: "\u65B0\u589E\u4FDD\u55AE", className: "p-2.5 text-stone-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg" }, /* @__PURE__ */ React.createElement(Plus, { size: 18 })), /* @__PURE__ */ React.createElement("button", { onClick: () => openEditCustomer(c), title: "\u7DE8\u8F2F\u5BA2\u6236", className: "p-2.5 text-stone-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg" }, /* @__PURE__ */ React.createElement(Pencil, { size: 18 })), /* @__PURE__ */ React.createElement("button", { onClick: () => confirmRemoveCustomer(c), title: "\u522A\u9664\u5BA2\u6236", className: "p-2.5 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg" }, /* @__PURE__ */ React.createElement(Trash2, { size: 18 }))))), isOpen && /* @__PURE__ */ React.createElement("div", { className: "border-t border-stone-100" }, c.note && /* @__PURE__ */ React.createElement("div", { className: "px-4 py-2 text-xs text-stone-500 bg-stone-50 border-b border-stone-100" }, "\u5099\u8A3B:", c.note), /* @__PURE__ */ React.createElement("div", { className: "px-4 py-3 border-b border-stone-100" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-2" }, /* @__PURE__ */ React.createElement("span", { className: "text-xs font-medium text-stone-500" }, "\u56DE\u8A2A\u7D00\u9304(", (c.visits || []).length, ")"), /* @__PURE__ */ React.createElement("button", { onClick: () => openAddVisit(c.id), className: "print-hide flex items-center gap-1 text-xs text-emerald-700 hover:underline" }, /* @__PURE__ */ React.createElement(Plus, { size: 12 }), " \u65B0\u589E\u7D00\u9304")), visitFormCustId === c.id && /* @__PURE__ */ React.createElement("div", { className: "print-hide mb-2 flex flex-col gap-1.5 bg-stone-50 border border-stone-200 rounded-lg p-2.5" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2" }, /* @__PURE__ */ React.createElement("label", { className: "text-xs text-stone-400 shrink-0" }, "\u65E5\u671F"), /* @__PURE__ */ React.createElement(
+      )), /* @__PURE__ */ React.createElement("div", { className: "flex flex-col items-end gap-1 shrink-0", onClick: (e) => e.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1.5" }, tierInfo && /* @__PURE__ */ React.createElement("span", { className: `text-xs font-medium px-2 py-0.5 rounded-full ${tierInfo.bg} ${tierInfo.text}` }, c.tier), stageInfo && /* @__PURE__ */ React.createElement("span", { className: `text-xs font-medium px-2 py-0.5 rounded-full ${stageInfo.bgSoft} ${stageInfo.text}` }, stageInfo.label)), custPremium > 0 && /* @__PURE__ */ React.createElement("div", { className: "text-sm font-serif font-semibold text-stone-700" }, "$", currency(custPremium)), custCommission > 0 && /* @__PURE__ */ React.createElement("div", { className: "text-xs text-stone-400" }, "\u4F63\u91D1 $", currency(custCommission), custReceived > 0 && /* @__PURE__ */ React.createElement("span", { className: "text-emerald-600" }, " \xB7 \u5DF2\u6536 $", currency(custReceived))), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mt-1 print-hide" }, c.contact && /* @__PURE__ */ React.createElement(
+        "a",
+        {
+          href: `tel:${c.contact}`,
+          title: "\u81F4\u96FB\u5BA2\u6236",
+          onClick: (e) => e.stopPropagation(),
+          className: "p-2.5 text-stone-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg"
+        },
+        "\u{1F4DE}"
+      ), c.lineId && /* @__PURE__ */ React.createElement(
+        "a",
+        {
+          href: `https://line.me/ti/p/~${c.lineId}`,
+          target: "_blank",
+          rel: "noreferrer",
+          title: "LINE \u901A\u77E5\u5BA2\u6236",
+          onClick: (e) => e.stopPropagation(),
+          className: "p-2.5 text-stone-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg"
+        },
+        "\u{1F4AC}"
+      ), /* @__PURE__ */ React.createElement("button", { onClick: () => openAddPolicy(c.id), title: "\u65B0\u589E\u4FDD\u55AE", className: "p-2.5 text-stone-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg" }, /* @__PURE__ */ React.createElement(Plus, { size: 18 })), /* @__PURE__ */ React.createElement("button", { onClick: () => openEditCustomer(c), title: "\u7DE8\u8F2F\u5BA2\u6236", className: "p-2.5 text-stone-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg" }, /* @__PURE__ */ React.createElement(Pencil, { size: 18 })), /* @__PURE__ */ React.createElement("button", { onClick: () => confirmRemoveCustomer(c), title: "\u522A\u9664\u5BA2\u6236", className: "p-2.5 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg" }, /* @__PURE__ */ React.createElement(Trash2, { size: 18 }))))), isOpen && /* @__PURE__ */ React.createElement("div", { className: "border-t border-stone-100" }, c.note && /* @__PURE__ */ React.createElement("div", { className: "px-4 py-2 text-xs text-stone-500 bg-stone-50 border-b border-stone-100" }, "\u5099\u8A3B:", c.note), /* @__PURE__ */ React.createElement("div", { className: "px-4 py-3 border-b border-stone-100" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-2" }, /* @__PURE__ */ React.createElement("span", { className: "text-xs font-medium text-stone-500" }, "\u56DE\u8A2A\u7D00\u9304(", (c.visits || []).length, ")"), /* @__PURE__ */ React.createElement("button", { onClick: () => openAddVisit(c.id), className: "print-hide flex items-center gap-1 text-xs text-emerald-700 hover:underline" }, /* @__PURE__ */ React.createElement(Plus, { size: 12 }), " \u65B0\u589E\u7D00\u9304")), visitFormCustId === c.id && /* @__PURE__ */ React.createElement("div", { className: "print-hide mb-2 flex flex-col gap-1.5 bg-stone-50 border border-stone-200 rounded-lg p-2.5" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2" }, /* @__PURE__ */ React.createElement("label", { className: "text-xs text-stone-400 shrink-0" }, "\u65E5\u671F"), /* @__PURE__ */ React.createElement(
         "input",
         {
           type: "date",
