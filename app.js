@@ -118,7 +118,7 @@
     { key: "\u5DF2\u6536\u6B3E", bg: "bg-emerald-100", text: "text-emerald-700" }
   ];
   const OCCUPATION_CLASSES = ["\u7B2C1\u985E", "\u7B2C2\u985E", "\u7B2C3\u985E", "\u7B2C4\u985E", "\u7B2C5\u985E", "\u7B2C6\u985E"];
-  const emptyCustomer = { name: "", company: "", occupation: "", contact: "", email: "", birthday: "", tier: "", note: "", lastActivity: "", lastActivityDate: "", nextFollowUp: "", referredBy: "", idNumber: "", addressCity: "", addressStreet: "", discType: "", policyGap: "", licensePlate: "", occupationClass: "", emergencyContactName: "", emergencyContactPhone: "", visits: [] };
+  const emptyCustomer = { name: "", company: "", occupation: "", contact: "", email: "", lineId: "", birthday: "", tier: "", note: "", lastActivity: "", lastActivityDate: "", nextFollowUp: "", referredBy: "", idNumber: "", addressCity: "", addressStreet: "", discType: "", policyGap: "", licensePlate: "", occupationClass: "", emergencyContactName: "", emergencyContactPhone: "", visits: [] };
   const emptyPolicy = {
     category: "\u58FD\u96AA",
     type: "",
@@ -137,7 +137,11 @@
     billingStatus: "\u672A\u8ACB\u6B3E",
     invoiceDate: "",
     attachmentName: "",
-    attachmentData: ""
+    attachmentData: "",
+    nextDuePaidFor: "",
+    nextDuePaidDate: "",
+    paymentPaidFor: "",
+    paymentPaidDate: ""
   };
   function uid() {
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -228,6 +232,7 @@
     const [expanded, setExpanded] = useState({});
     const [query, setQuery] = useState("");
     const [stageFilter, setStageFilter] = useState([]);
+    const [categoryFilter, setCategoryFilter] = useState([]);
     const [tierFilter, setTierFilter] = useState([]);
     const [cityFilter, setCityFilter] = useState("");
     const [dealMonth, setDealMonth] = useState("");
@@ -271,23 +276,23 @@
       const items = [];
       customers.forEach((c) => {
         (c.policies || []).filter((p) => !p.lost).forEach((p) => {
-          if (p.nextDueDate && daysUntil(p.nextDueDate) < 0) {
-            items.push({ custId: c.id, custName: c.name, type: p.type, dateLabel: "\u5230\u671F\u65E5", date: p.nextDueDate, diff: daysUntil(p.nextDueDate) });
+          if (p.nextDueDate && daysUntil(p.nextDueDate) < 0 && p.nextDuePaidFor !== p.nextDueDate) {
+            items.push({ custId: c.id, custName: c.name, custContact: c.contact, custLineId: c.lineId, polId: p.id, type: p.type, dateLabel: "\u5230\u671F\u65E5", dateType: "nextDue", date: p.nextDueDate, diff: daysUntil(p.nextDueDate) });
           }
-          if (p.category === "\u58FD\u96AA" && p.paymentDate && daysUntil(p.paymentDate) < 0) {
-            items.push({ custId: c.id, custName: c.name, type: p.type, dateLabel: "\u7E73\u8CBB\u65E5", date: p.paymentDate, diff: daysUntil(p.paymentDate) });
+          if (p.category === "\u58FD\u96AA" && p.paymentDate && daysUntil(p.paymentDate) < 0 && p.paymentPaidFor !== p.paymentDate) {
+            items.push({ custId: c.id, custName: c.name, custContact: c.contact, custLineId: c.lineId, polId: p.id, type: p.type, dateLabel: "\u7E73\u8CBB\u65E5", dateType: "payment", date: p.paymentDate, diff: daysUntil(p.paymentDate) });
           }
           if (p.billingStatus === "\u5DF2\u8ACB\u6B3E\u5F85\u6536" && p.invoiceDate && daysUntil(p.invoiceDate) <= -14) {
             const waited = Math.abs(daysUntil(p.invoiceDate));
-            items.push({ custId: c.id, custName: c.name, type: p.type, dateLabel: "\u8ACB\u6B3E", date: p.invoiceDate, diff: -waited, label: `\u8ACB\u6B3E\u5DF2 ${waited} \u5929\u672A\u6536\u6B3E` });
+            items.push({ custId: c.id, custName: c.name, custContact: c.contact, custLineId: c.lineId, polId: p.id, type: p.type, dateLabel: "\u8ACB\u6B3E", date: p.invoiceDate, diff: -waited, label: `\u8ACB\u6B3E\u5DF2 ${waited} \u5929\u672A\u6536\u6B3E` });
           }
           if (p.stage === "\u6210\u4EA4" && p.billingStatus === "\u672A\u8ACB\u6B3E" && p.effectiveDate && daysUntil(p.effectiveDate) <= -30) {
             const waited = Math.abs(daysUntil(p.effectiveDate));
-            items.push({ custId: c.id, custName: c.name, type: p.type, dateLabel: "\u8ACB\u6B3E", date: p.effectiveDate, diff: -waited, label: `\u6210\u4EA4\u5DF2 ${waited} \u5929\u5C1A\u672A\u8ACB\u6B3E` });
+            items.push({ custId: c.id, custName: c.name, custContact: c.contact, custLineId: c.lineId, polId: p.id, type: p.type, dateLabel: "\u8ACB\u6B3E", date: p.effectiveDate, diff: -waited, label: `\u6210\u4EA4\u5DF2 ${waited} \u5929\u5C1A\u672A\u8ACB\u6B3E` });
           }
         });
         if (c.nextFollowUp && daysUntil(c.nextFollowUp) < 0) {
-          items.push({ custId: c.id, custName: c.name, type: "\u8DDF\u9032\u63D0\u9192", dateLabel: "\u4E0B\u6B21\u8FFD\u8E64\u65E5", date: c.nextFollowUp, diff: daysUntil(c.nextFollowUp) });
+          items.push({ custId: c.id, custName: c.name, custContact: c.contact, custLineId: c.lineId, type: "\u8DDF\u9032\u63D0\u9192", dateLabel: "\u4E0B\u6B21\u8FFD\u8E64\u65E5", date: c.nextFollowUp, diff: daysUntil(c.nextFollowUp) });
         }
       });
       return items.sort((a, b) => a.diff - b.diff);
@@ -337,6 +342,9 @@
         if (stageFilter.length > 0) {
           policies = policies.filter((p) => stageFilter.includes("\u5DF2\u6D41\u5931") && p.lost || !p.lost && stageFilter.includes(p.stage));
         }
+        if (categoryFilter.length > 0) {
+          policies = policies.filter((p) => categoryFilter.includes(p.category));
+        }
         return __spreadProps(__spreadValues({}, c), { policies });
       }).filter((c) => {
         if (tierFilter.length > 0 && !tierFilter.includes(c.tier)) return false;
@@ -347,10 +355,10 @@
         }
         if (query.trim()) {
           const q = query.trim().toLowerCase();
-          const hay = `${c.name} ${c.company} ${c.occupation} ${c.contact} ${c.email} ${c.note} ${c.referredBy} ${c.idNumber} ${c.addressCity} ${c.addressStreet} ${c.licensePlate} ${c.emergencyContactName} ${(c.policies || []).map((p) => `${p.type} ${p.company}`).join(" ")}`.toLowerCase();
+          const hay = `${c.name} ${c.company} ${c.occupation} ${c.contact} ${c.email} ${c.lineId} ${c.note} ${c.referredBy} ${c.idNumber} ${c.addressCity} ${c.addressStreet} ${c.licensePlate} ${c.emergencyContactName} ${(c.policies || []).map((p) => `${p.type} ${p.company}`).join(" ")}`.toLowerCase();
           if (!hay.includes(q)) return false;
         }
-        if (stageFilter.length > 0 && c.policies.length === 0) return false;
+        if ((stageFilter.length > 0 || categoryFilter.length > 0) && c.policies.length === 0) return false;
         return true;
       }).sort((a, b) => {
         const nbA = nextBirthday(a.birthday);
@@ -361,7 +369,7 @@
         const dueB = Math.min(...(b.policies || []).filter((p) => !p.lost && (p.nextDueDate || p.paymentDate)).map((p) => [p.nextDueDate, p.paymentDate].filter(Boolean).map(daysUntil)).reduce((acc, arr) => acc.concat(arr), []), nbB ? nbB.diff : 9999, nfB, 9999);
         return dueA - dueB;
       });
-    }, [customers, query, stageFilter, tierFilter, dealMonth]);
+    }, [customers, query, stageFilter, categoryFilter, tierFilter, cityFilter, dealMonth]);
     const stats = useMemo(() => {
       const visiblePolicies = [];
       filteredCustomers.forEach((c) => (c.policies || []).forEach((p) => visiblePolicies.push(p)));
@@ -522,6 +530,15 @@ ${p.type}${p.company ? "(" + p.company + ")" : ""}
     function quickBillingChange(custId, polId, billingStatus) {
       setCustomers((cs) => cs.map((c) => c.id === custId ? __spreadProps(__spreadValues({}, c), { policies: c.policies.map((p) => p.id === polId ? __spreadProps(__spreadValues({}, p), { billingStatus }) : p) }) : c));
     }
+    function markPolicyPaid(custId, polId, dateType) {
+      const today = todayStr();
+      setCustomers((cs) => cs.map((c) => c.id === custId ? __spreadProps(__spreadValues({}, c), { policies: c.policies.map((p) => {
+        if (p.id !== polId) return p;
+        if (dateType === "nextDue") return __spreadProps(__spreadValues({}, p), { nextDuePaidFor: p.nextDueDate, nextDuePaidDate: today });
+        if (dateType === "payment") return __spreadProps(__spreadValues({}, p), { paymentPaidFor: p.paymentDate, paymentPaidDate: today });
+        return p;
+      }) }) : c));
+    }
     function downloadBlob(content, filename, mime) {
       const blob = new Blob([content], { type: mime });
       const url = URL.createObjectURL(blob);
@@ -548,7 +565,7 @@ ${p.type}${p.company ? "(" + p.company + ")" : ""}
     }
     function handleExportExcel() {
       try {
-        const headers = ["\u5BA2\u6236\u59D3\u540D", "\u516C\u53F8", "\u8077\u696D", "\u8077\u696D\u7B49\u7D1A", "\u96FB\u8A71", "\u7DCA\u6025\u806F\u7D61\u4EBA", "\u7DCA\u6025\u806F\u7D61\u4EBA\u96FB\u8A71", "\u8ECA\u724C", "Email", "\u5BA2\u6236\u5206\u7D1A", "\u7E23\u5E02", "\u5730\u5740", "\u4ECB\u7D39\u4EBA", "\u96AA\u7A2E", "\u4FDD\u96AA\u516C\u53F8", "\u4FDD\u984D", "\u4FDD\u8CBB", "\u968E\u6BB5", "\u5230\u671F\u65E5", "\u7E73\u8CBB\u65E5", "\u53D7\u76CA\u4EBA", "\u4F63\u91D1", "\u8ACB\u6B3E/\u6536\u6B3E"];
+        const headers = ["\u5BA2\u6236\u59D3\u540D", "\u516C\u53F8", "\u8077\u696D", "\u8077\u696D\u7B49\u7D1A", "\u96FB\u8A71", "LINE ID", "\u7DCA\u6025\u806F\u7D61\u4EBA", "\u7DCA\u6025\u806F\u7D61\u4EBA\u96FB\u8A71", "\u8ECA\u724C", "Email", "\u5BA2\u6236\u5206\u7D1A", "\u7E23\u5E02", "\u5730\u5740", "\u4ECB\u7D39\u4EBA", "\u96AA\u7A2E", "\u4FDD\u96AA\u516C\u53F8", "\u4FDD\u984D", "\u4FDD\u8CBB", "\u968E\u6BB5", "\u5230\u671F\u65E5", "\u7E73\u8CBB\u65E5", "\u53D7\u76CA\u4EBA", "\u4F63\u91D1", "\u8ACB\u6B3E/\u6536\u6B3E"];
         const rows = [headers];
         customers.forEach((c) => {
           const policies = c.policies && c.policies.length > 0 ? c.policies : [null];
@@ -559,6 +576,7 @@ ${p.type}${p.company ? "(" + p.company + ")" : ""}
               c.occupation,
               c.occupationClass,
               c.contact,
+              c.lineId,
               c.emergencyContactName,
               c.emergencyContactPhone,
               c.licensePlate,
@@ -662,6 +680,13 @@ ${p.type}${p.company ? "(" + p.company + ")" : ""}
         onToggle: (key) => toggleFilter(setStageFilter, stageFilter, key),
         options: [{ key: "\u5168\u90E8", label: "\u5168\u90E8" }, ...STAGES.map((s) => ({ key: s.key, label: s.label })), { key: "\u5DF2\u6D41\u5931", label: "\u5DF2\u6D41\u5931" }]
       }
+    )), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mb-6 text-sm flex-wrap print-hide" }, /* @__PURE__ */ React.createElement("span", { className: "text-stone-500 text-xs w-24 shrink-0" }, "\u4FDD\u96AA\u5225", /* @__PURE__ */ React.createElement("br", null), /* @__PURE__ */ React.createElement("span", { className: "text-stone-300" }, "\u53EF\u8907\u9078")), /* @__PURE__ */ React.createElement(
+      PillGroup,
+      {
+        value: categoryFilter,
+        onToggle: (key) => toggleFilter(setCategoryFilter, categoryFilter, key),
+        options: [{ key: "\u5168\u90E8", label: "\u5168\u90E8" }, ...CATEGORIES.map((c) => ({ key: c, label: c }))]
+      }
     )), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mb-6 text-sm flex-wrap print-hide" }, /* @__PURE__ */ React.createElement("span", { className: "text-stone-500 text-xs w-24 shrink-0" }, "\u5BA2\u6236\u5206\u7D1A", /* @__PURE__ */ React.createElement("br", null), /* @__PURE__ */ React.createElement("span", { className: "text-stone-300" }, "\u53EF\u8907\u9078")), /* @__PURE__ */ React.createElement(
       PillGroup,
       {
@@ -678,13 +703,14 @@ ${p.type}${p.company ? "(" + p.company + ")" : ""}
       },
       /* @__PURE__ */ React.createElement("option", { value: "" }, "\u5168\u90E8\u7E23\u5E02"),
       TAIWAN_CITIES.map((city) => /* @__PURE__ */ React.createElement("option", { key: city, value: city }, city))
-    ), (cityFilter || tierFilter.length > 0 || stageFilter.length > 0 || query || dealMonth) && /* @__PURE__ */ React.createElement(
+    ), (cityFilter || tierFilter.length > 0 || stageFilter.length > 0 || categoryFilter.length > 0 || query || dealMonth) && /* @__PURE__ */ React.createElement(
       "button",
       {
         onClick: () => {
           setCityFilter("");
           setTierFilter([]);
           setStageFilter([]);
+          setCategoryFilter([]);
           setQuery("");
           setDealMonth("");
         },
@@ -705,14 +731,42 @@ ${p.type}${p.company ? "(" + p.company + ")" : ""}
       const h = Math.max(8, count / funnelMax * 100);
       return /* @__PURE__ */ React.createElement("div", { key: s.key, className: "flex-1 flex flex-col items-center justify-end h-full gap-1" }, /* @__PURE__ */ React.createElement("div", { className: "text-sm font-serif font-semibold text-stone-800" }, count), premiumSum > 0 && /* @__PURE__ */ React.createElement("div", { className: "text-[10px] text-stone-400" }, "$", currency(premiumSum)), receivedSum !== null && receivedSum > 0 && /* @__PURE__ */ React.createElement("div", { className: "text-[10px] text-emerald-600 font-medium" }, "\u5BE6\u6536$", currency(receivedSum)), /* @__PURE__ */ React.createElement("div", { className: `w-full rounded-t-md ${s.tone}`, style: { height: `${h}%` } }), /* @__PURE__ */ React.createElement("div", { className: "text-xs text-stone-500" }, s.label));
     }))), referralStats.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "bg-white border border-stone-200 rounded-xl p-5 mb-5" }, /* @__PURE__ */ React.createElement("div", { className: "text-xs font-medium text-stone-500 mb-3 tracking-wide" }, "\u8F49\u4ECB\u7D39\u4F86\u6E90\u6392\u884C(\u524D 5 \u540D)"), /* @__PURE__ */ React.createElement("div", { className: "space-y-2" }, referralStats.map((r, i) => /* @__PURE__ */ React.createElement("div", { key: r.name, className: "flex items-center gap-3" }, /* @__PURE__ */ React.createElement("span", { className: "text-xs text-stone-400 w-4" }, i + 1), /* @__PURE__ */ React.createElement("span", { className: "text-sm text-stone-700 flex-1" }, r.name), /* @__PURE__ */ React.createElement("div", { className: "flex-1 max-w-[160px] bg-stone-100 rounded-full h-2 overflow-hidden" }, /* @__PURE__ */ React.createElement("div", { className: "h-full bg-emerald-500", style: { width: `${r.count / referralStats[0].count * 100}%` } })), /* @__PURE__ */ React.createElement("span", { className: "text-xs text-stone-500 w-16 text-right" }, r.count, " \u4F4D\u5BA2\u6236"))))), overdueItems.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "bg-rose-50 border border-rose-200 rounded-xl p-4 mb-5" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1.5 text-sm font-medium text-rose-700 mb-3" }, /* @__PURE__ */ React.createElement(AlertCircle, { size: 15 }), " \u5DF2\u903E\u671F\u4FDD\u55AE(", overdueItems.length, ")"), /* @__PURE__ */ React.createElement("div", { className: "space-y-1.5" }, overdueItems.map((it, idx) => /* @__PURE__ */ React.createElement(
-      "button",
+      "div",
       {
         key: idx,
-        onClick: () => jumpToCustomer(it.custId),
-        className: "w-full flex items-center justify-between gap-2 text-sm bg-white border border-rose-100 rounded-lg px-3 py-2 hover:bg-rose-100/50 transition-colors text-left"
+        className: "w-full flex items-center justify-between gap-2 text-sm bg-white border border-rose-100 rounded-lg px-3 py-2"
       },
-      /* @__PURE__ */ React.createElement("span", { className: "text-stone-700" }, /* @__PURE__ */ React.createElement("span", { className: "font-medium" }, it.custName), " \xB7 ", it.type),
-      /* @__PURE__ */ React.createElement("span", { className: "text-rose-600 text-xs font-medium shrink-0" }, it.label || `${it.dateLabel}\u5DF2\u903E\u671F ${Math.abs(it.diff)} \u5929`, " \xB7 ", it.date)
+      /* @__PURE__ */ React.createElement("button", { onClick: () => jumpToCustomer(it.custId), className: "flex-1 min-w-0 text-left" }, /* @__PURE__ */ React.createElement("span", { className: "text-stone-700" }, /* @__PURE__ */ React.createElement("span", { className: "font-medium" }, it.custName), " \xB7 ", it.type), /* @__PURE__ */ React.createElement("div", { className: "text-rose-600 text-xs font-medium" }, it.label || `${it.dateLabel}\u5DF2\u903E\u671F ${Math.abs(it.diff)} \u5929`, " \xB7 ", it.date)),
+      /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1 shrink-0" }, it.custContact && /* @__PURE__ */ React.createElement(
+        "a",
+        {
+          href: `tel:${it.custContact}`,
+          title: "\u81F4\u96FB\u5BA2\u6236",
+          onClick: (e) => e.stopPropagation(),
+          className: "p-2 text-stone-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg"
+        },
+        "\u{1F4DE}"
+      ), it.custLineId && /* @__PURE__ */ React.createElement(
+        "a",
+        {
+          href: `https://line.me/ti/p/~${it.custLineId}`,
+          target: "_blank",
+          rel: "noreferrer",
+          title: "LINE \u901A\u77E5\u5BA2\u6236",
+          onClick: (e) => e.stopPropagation(),
+          className: "p-2 text-stone-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg"
+        },
+        "\u{1F4AC}"
+      ), it.dateType && /* @__PURE__ */ React.createElement(
+        "button",
+        {
+          onClick: () => markPolicyPaid(it.custId, it.polId, it.dateType),
+          title: "\u6A19\u8A18\u5DF2\u7E73\u8CBB",
+          className: "flex items-center gap-1 text-xs px-2.5 py-2 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+        },
+        /* @__PURE__ */ React.createElement(Check, { size: 13 }),
+        " \u5DF2\u7E73\u8CBB"
+      ))
     )))), /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, filteredCustomers.length === 0 ? /* @__PURE__ */ React.createElement("div", { className: "bg-white border border-stone-200 rounded-xl py-14 text-center text-stone-400 text-sm" }, customers.length === 0 ? "\u9084\u6C92\u6709\u5BA2\u6236\u8CC7\u6599,\u9EDE\u53F3\u4E0A\u89D2\u300C\u65B0\u589E\u5BA2\u6236\u300D\u958B\u59CB\u8FFD\u8E64" : "\u6C92\u6709\u7B26\u5408\u689D\u4EF6\u7684\u5BA2\u6236") : filteredCustomers.map((c) => {
       var _a;
       const isOpen = (_a = expanded[c.id]) != null ? _a : true;
@@ -726,7 +780,7 @@ ${p.type}${p.company ? "(" + p.company + ")" : ""}
       const actTone = c.lastActivityDate ? dueTone(c.lastActivityDate, false) : null;
       const alert = customerAlert(c);
       const anniv = customerAnniversary(c);
-      return /* @__PURE__ */ React.createElement("div", { key: c.id, id: `cust-${c.id}`, className: "bg-white border border-stone-200 rounded-xl overflow-hidden scroll-mt-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-start gap-3 px-4 py-3 cursor-pointer hover:bg-stone-50", onClick: () => toggleExpand(c.id) }, isOpen ? /* @__PURE__ */ React.createElement(ChevronDown, { size: 16, className: "text-stone-400 mt-2.5 shrink-0" }) : /* @__PURE__ */ React.createElement(ChevronRight, { size: 16, className: "text-stone-400 mt-2.5 shrink-0" }), /* @__PURE__ */ React.createElement("div", { className: `w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium shrink-0 ${tierInfo ? tierInfo.bg : "bg-stone-200"} ${tierInfo ? tierInfo.text : "text-stone-500"}` }, initialsOf(c.name)), /* @__PURE__ */ React.createElement("div", { className: "flex-1 min-w-0" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 flex-wrap" }, /* @__PURE__ */ React.createElement("span", { className: "font-medium text-stone-800" }, c.name), nb && nb.diff <= 30 && /* @__PURE__ */ React.createElement("span", { className: "inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700" }, /* @__PURE__ */ React.createElement(Cake, { size: 11 }), " ", nb.diff === 0 ? "\u4ECA\u5929\u751F\u65E5" : `${nb.diff}\u5929\u5F8C\u751F\u65E5`), anniv && /* @__PURE__ */ React.createElement("span", { className: "inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700" }, /* @__PURE__ */ React.createElement(PartyPopper, { size: 11 }), " ", anniv.diff === 0 ? `\u4FDD\u55AE\u7B2C${anniv.years}\u9031\u5E74\u5C31\u662F\u4ECA\u5929` : `\u4FDD\u55AE\u7B2C${anniv.years}\u9031\u5E74${anniv.diff}\u5929\u5F8C`), alert && /* @__PURE__ */ React.createElement("span", { className: `inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${alert.overdue ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-700"}` }, /* @__PURE__ */ React.createElement(AlertCircle, { size: 11 }), " ", alert.overdue ? "\u4FDD\u55AE\u5DF2\u903E\u671F" : alert.diff === 0 ? "\u4FDD\u55AE\u4ECA\u5929\u5230\u671F/\u7E73\u8CBB" : `\u4FDD\u55AE${alert.diff}\u5929\u5F8C\u5230\u671F/\u7E73\u8CBB`)), (c.company || c.occupation) && /* @__PURE__ */ React.createElement("div", { className: "text-xs text-stone-400 mt-0.5" }, c.company, c.company && c.occupation ? " \xB7 " : "", c.occupation), c.referredBy && /* @__PURE__ */ React.createElement("div", { className: "text-xs text-stone-400 mt-0.5" }, "\u4ECB\u7D39\u4EBA:", c.referredBy), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-3 text-xs text-stone-400 mt-0.5 flex-wrap" }, c.contact && /* @__PURE__ */ React.createElement("span", { className: "flex items-center gap-1" }, /* @__PURE__ */ React.createElement(Phone, { size: 11 }), c.contact), c.email && /* @__PURE__ */ React.createElement("span", { className: "flex items-center gap-1" }, /* @__PURE__ */ React.createElement(Mail, { size: 11 }), c.email), /* @__PURE__ */ React.createElement("span", null, (c.policies || []).length, " \u5F35\u4FDD\u55AE"), c.nextFollowUp && /* @__PURE__ */ React.createElement("span", { className: `flex items-center gap-1 ${dueTone(c.nextFollowUp, false, 0).cls}` }, /* @__PURE__ */ React.createElement(Calendar, { size: 11 }), " \u4E0B\u6B21\u8FFD\u8E64 ", c.nextFollowUp)), quickEditId === c.id ? /* @__PURE__ */ React.createElement("div", { className: "mt-2 flex flex-col gap-1.5 bg-stone-50 border border-stone-200 rounded-lg p-2.5", onClick: (e) => e.stopPropagation() }, /* @__PURE__ */ React.createElement(
+      return /* @__PURE__ */ React.createElement("div", { key: c.id, id: `cust-${c.id}`, className: "bg-white border border-stone-200 rounded-xl overflow-hidden scroll-mt-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-start gap-3 px-4 py-3 cursor-pointer hover:bg-stone-50", onClick: () => toggleExpand(c.id) }, isOpen ? /* @__PURE__ */ React.createElement(ChevronDown, { size: 16, className: "text-stone-400 mt-2.5 shrink-0" }) : /* @__PURE__ */ React.createElement(ChevronRight, { size: 16, className: "text-stone-400 mt-2.5 shrink-0" }), /* @__PURE__ */ React.createElement("div", { className: `w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium shrink-0 ${tierInfo ? tierInfo.bg : "bg-stone-200"} ${tierInfo ? tierInfo.text : "text-stone-500"}` }, initialsOf(c.name)), /* @__PURE__ */ React.createElement("div", { className: "flex-1 min-w-0" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 flex-wrap" }, /* @__PURE__ */ React.createElement("span", { className: "font-medium text-stone-800" }, c.name), nb && nb.diff <= 30 && /* @__PURE__ */ React.createElement("span", { className: "inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700" }, /* @__PURE__ */ React.createElement(Cake, { size: 11 }), " ", nb.diff === 0 ? "\u4ECA\u5929\u751F\u65E5" : `${nb.diff}\u5929\u5F8C\u751F\u65E5`), anniv && /* @__PURE__ */ React.createElement("span", { className: "inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700" }, /* @__PURE__ */ React.createElement(PartyPopper, { size: 11 }), " ", anniv.diff === 0 ? `\u4FDD\u55AE\u7B2C${anniv.years}\u9031\u5E74\u5C31\u662F\u4ECA\u5929` : `\u4FDD\u55AE\u7B2C${anniv.years}\u9031\u5E74${anniv.diff}\u5929\u5F8C`), alert && /* @__PURE__ */ React.createElement("span", { className: `inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${alert.overdue ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-700"}` }, /* @__PURE__ */ React.createElement(AlertCircle, { size: 11 }), " ", alert.overdue ? "\u4FDD\u55AE\u5DF2\u903E\u671F" : alert.diff === 0 ? "\u4FDD\u55AE\u4ECA\u5929\u5230\u671F/\u7E73\u8CBB" : `\u4FDD\u55AE${alert.diff}\u5929\u5F8C\u5230\u671F/\u7E73\u8CBB`)), (c.company || c.occupation) && /* @__PURE__ */ React.createElement("div", { className: "text-xs text-stone-400 mt-0.5" }, c.company, c.company && c.occupation ? " \xB7 " : "", c.occupation), c.referredBy && /* @__PURE__ */ React.createElement("div", { className: "text-xs text-stone-400 mt-0.5" }, "\u4ECB\u7D39\u4EBA:", c.referredBy), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-3 text-xs text-stone-400 mt-0.5 flex-wrap" }, c.contact && /* @__PURE__ */ React.createElement("span", { className: "flex items-center gap-1" }, /* @__PURE__ */ React.createElement(Phone, { size: 11 }), c.contact), c.email && /* @__PURE__ */ React.createElement("span", { className: "flex items-center gap-1" }, /* @__PURE__ */ React.createElement(Mail, { size: 11 }), c.email), c.lineId && /* @__PURE__ */ React.createElement("span", { className: "flex items-center gap-1" }, "\u{1F4AC}", c.lineId), /* @__PURE__ */ React.createElement("span", null, (c.policies || []).length, " \u5F35\u4FDD\u55AE"), c.nextFollowUp && /* @__PURE__ */ React.createElement("span", { className: `flex items-center gap-1 ${dueTone(c.nextFollowUp, false, 0).cls}` }, /* @__PURE__ */ React.createElement(Calendar, { size: 11 }), " \u4E0B\u6B21\u8FFD\u8E64 ", c.nextFollowUp)), quickEditId === c.id ? /* @__PURE__ */ React.createElement("div", { className: "mt-2 flex flex-col gap-1.5 bg-stone-50 border border-stone-200 rounded-lg p-2.5", onClick: (e) => e.stopPropagation() }, /* @__PURE__ */ React.createElement(
         "input",
         {
           value: quickForm.lastActivity,
@@ -792,7 +846,7 @@ ${p.type}${p.company ? "(" + p.company + ")" : ""}
             className: `appearance-none text-xs font-medium pl-2.5 pr-6 py-1 rounded-full ${sInfo.bgSoft} ${sInfo.text} border-0 focus:outline-none focus:ring-2 ${sInfo.ring} cursor-pointer`
           },
           STAGES.map((s) => /* @__PURE__ */ React.createElement("option", { key: s.key, value: s.key }, s.label))
-        ), /* @__PURE__ */ React.createElement(ChevronDown, { size: 11, className: "pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" }))), /* @__PURE__ */ React.createElement("td", { className: "px-4 py-2.5" }, /* @__PURE__ */ React.createElement("div", { className: `text-xs ${dt.cls}` }, dt.label)), /* @__PURE__ */ React.createElement("td", { className: "px-4 py-2.5" }, /* @__PURE__ */ React.createElement("div", { className: `text-xs ${pt ? pt.cls : "text-stone-300"}` }, pt ? pt.label : "\u2014")), /* @__PURE__ */ React.createElement("td", { className: "px-4 py-2.5 text-stone-500 text-xs" }, p.beneficiary || "\u2014"), /* @__PURE__ */ React.createElement("td", { className: "px-4 py-2.5" }, p.lost ? /* @__PURE__ */ React.createElement("span", { className: "text-xs text-stone-300" }, "\u2014") : /* @__PURE__ */ React.createElement("div", { className: "relative inline-block" }, (() => {
+        ), /* @__PURE__ */ React.createElement(ChevronDown, { size: 11, className: "pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" }))), /* @__PURE__ */ React.createElement("td", { className: "px-4 py-2.5" }, /* @__PURE__ */ React.createElement("div", { className: `text-xs ${dt.cls}` }, dt.label), p.nextDuePaidFor === p.nextDueDate && p.nextDuePaidDate && /* @__PURE__ */ React.createElement("div", { className: "text-xs text-emerald-600" }, "\u2713 \u5DF2\u7E73\u8CBB(\u78BA\u8A8D\u65BC", p.nextDuePaidDate, ")")), /* @__PURE__ */ React.createElement("td", { className: "px-4 py-2.5" }, /* @__PURE__ */ React.createElement("div", { className: `text-xs ${pt ? pt.cls : "text-stone-300"}` }, pt ? pt.label : "\u2014"), p.paymentPaidFor === p.paymentDate && p.paymentPaidDate && /* @__PURE__ */ React.createElement("div", { className: "text-xs text-emerald-600" }, "\u2713 \u5DF2\u7E73\u8CBB(\u78BA\u8A8D\u65BC", p.paymentPaidDate, ")")), /* @__PURE__ */ React.createElement("td", { className: "px-4 py-2.5 text-stone-500 text-xs" }, p.beneficiary || "\u2014"), /* @__PURE__ */ React.createElement("td", { className: "px-4 py-2.5" }, p.lost ? /* @__PURE__ */ React.createElement("span", { className: "text-xs text-stone-300" }, "\u2014") : /* @__PURE__ */ React.createElement("div", { className: "relative inline-block" }, (() => {
           const bInfo = BILLING_STATUS.find((b) => b.key === p.billingStatus) || BILLING_STATUS[0];
           return /* @__PURE__ */ React.createElement(
             "select",
@@ -805,7 +859,16 @@ ${p.type}${p.company ? "(" + p.company + ")" : ""}
           );
         })(), /* @__PURE__ */ React.createElement(ChevronDown, { size: 11, className: "pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" }))), /* @__PURE__ */ React.createElement("td", { className: "px-4 py-2.5 print-hide" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-end gap-2" }, /* @__PURE__ */ React.createElement("button", { onClick: () => togglePolicyLost(c.id, p.id), title: p.lost ? "\u6062\u5FA9\u8FFD\u8E64" : "\u6A19\u8A18\u6D41\u5931", className: "p-2.5 text-stone-400 hover:text-stone-700 hover:bg-stone-100 rounded-lg" }, /* @__PURE__ */ React.createElement(Ban, { size: 17 })), /* @__PURE__ */ React.createElement("button", { onClick: () => openEditPolicy(c.id, p), title: "\u7DE8\u8F2F", className: "p-2.5 text-stone-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg" }, /* @__PURE__ */ React.createElement(Pencil, { size: 17 })), /* @__PURE__ */ React.createElement("button", { onClick: () => confirmRemovePolicy(c.id, p), title: "\u522A\u9664", className: "p-2.5 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg" }, /* @__PURE__ */ React.createElement(Trash2, { size: 17 })))));
       }))))));
-    }))), showCustForm && /* @__PURE__ */ React.createElement("div", { className: "fixed inset-0 bg-stone-900/40 flex items-center justify-center p-4 z-50" }, /* @__PURE__ */ React.createElement("div", { className: "bg-white rounded-xl w-full max-w-md p-6 shadow-xl max-h-[90vh] overflow-y-auto" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-4" }, /* @__PURE__ */ React.createElement("h2", { className: "text-base font-semibold text-stone-800" }, editingCustId ? "\u7DE8\u8F2F\u5BA2\u6236" : "\u65B0\u589E\u5BA2\u6236"), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowCustForm(false), className: "p-2 -m-2 text-stone-400 hover:text-stone-700" }, /* @__PURE__ */ React.createElement(X, { size: 20 }))), /* @__PURE__ */ React.createElement("form", { onSubmit: submitCustomer, className: "space-y-3" }, /* @__PURE__ */ React.createElement("div", { className: "grid grid-cols-2 gap-3" }, /* @__PURE__ */ React.createElement(Field, { label: "\u59D3\u540D *" }, /* @__PURE__ */ React.createElement(
+    }))), showCustForm && /* @__PURE__ */ React.createElement("div", { className: "fixed inset-0 bg-stone-900/40 flex items-center justify-center p-4 z-50" }, /* @__PURE__ */ React.createElement("div", { className: "bg-white rounded-xl w-full max-w-md p-6 shadow-xl max-h-[90vh] overflow-y-auto" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-4" }, /* @__PURE__ */ React.createElement("h2", { className: "text-base font-semibold text-stone-800" }, editingCustId ? "\u7DE8\u8F2F\u5BA2\u6236" : "\u65B0\u589E\u5BA2\u6236"), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowCustForm(false), className: "p-2 -m-2 text-stone-400 hover:text-stone-700" }, /* @__PURE__ */ React.createElement(X, { size: 20 }))), /* @__PURE__ */ React.createElement("form", { onSubmit: submitCustomer, className: "space-y-3" }, /* @__PURE__ */ React.createElement(Field, { label: "\u5BA2\u6236\u5206\u7D1A" }, /* @__PURE__ */ React.createElement(
+      "select",
+      {
+        value: custForm.tier,
+        onChange: (e) => setCustForm(__spreadProps(__spreadValues({}, custForm), { tier: e.target.value })),
+        className: "w-full px-3 py-2 text-sm border border-stone-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-300"
+      },
+      /* @__PURE__ */ React.createElement("option", { value: "" }, "\u672A\u5206\u7D1A"),
+      TIERS.map((t) => /* @__PURE__ */ React.createElement("option", { key: t.key, value: t.key }, t.label))
+    )), /* @__PURE__ */ React.createElement("div", { className: "grid grid-cols-2 gap-3" }, /* @__PURE__ */ React.createElement(Field, { label: "\u59D3\u540D *" }, /* @__PURE__ */ React.createElement(
       "input",
       {
         required: true,
@@ -835,12 +898,12 @@ ${p.type}${p.company ? "(" + p.company + ")" : ""}
         onChange: (e) => setCustForm(__spreadProps(__spreadValues({}, custForm), { contact: e.target.value })),
         className: "w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-300"
       }
-    ))), /* @__PURE__ */ React.createElement("div", { className: "grid grid-cols-2 gap-3" }, /* @__PURE__ */ React.createElement(Field, { label: "\u751F\u65E5" }, /* @__PURE__ */ React.createElement(
+    ))), /* @__PURE__ */ React.createElement("div", { className: "grid grid-cols-2 gap-3" }, /* @__PURE__ */ React.createElement(Field, { label: "LINE ID" }, /* @__PURE__ */ React.createElement(
       "input",
       {
-        type: "date",
-        value: custForm.birthday,
-        onChange: (e) => setCustForm(__spreadProps(__spreadValues({}, custForm), { birthday: e.target.value })),
+        value: custForm.lineId,
+        onChange: (e) => setCustForm(__spreadProps(__spreadValues({}, custForm), { lineId: e.target.value })),
+        placeholder: "\u4F8B:abc1234",
         className: "w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-300"
       }
     )), /* @__PURE__ */ React.createElement(Field, { label: "Email" }, /* @__PURE__ */ React.createElement(
@@ -850,15 +913,14 @@ ${p.type}${p.company ? "(" + p.company + ")" : ""}
         onChange: (e) => setCustForm(__spreadProps(__spreadValues({}, custForm), { email: e.target.value })),
         className: "w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-300"
       }
-    ))), /* @__PURE__ */ React.createElement("div", { className: "grid grid-cols-2 gap-3" }, /* @__PURE__ */ React.createElement(Field, { label: "\u5BA2\u6236\u5206\u7D1A" }, /* @__PURE__ */ React.createElement(
-      "select",
+    ))), /* @__PURE__ */ React.createElement("div", { className: "grid grid-cols-2 gap-3" }, /* @__PURE__ */ React.createElement(Field, { label: "\u751F\u65E5" }, /* @__PURE__ */ React.createElement(
+      "input",
       {
-        value: custForm.tier,
-        onChange: (e) => setCustForm(__spreadProps(__spreadValues({}, custForm), { tier: e.target.value })),
-        className: "w-full px-3 py-2 text-sm border border-stone-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-300"
-      },
-      /* @__PURE__ */ React.createElement("option", { value: "" }, "\u672A\u5206\u7D1A"),
-      TIERS.map((t) => /* @__PURE__ */ React.createElement("option", { key: t.key, value: t.key }, t.label))
+        type: "date",
+        value: custForm.birthday,
+        onChange: (e) => setCustForm(__spreadProps(__spreadValues({}, custForm), { birthday: e.target.value })),
+        className: "w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-300"
+      }
     )), /* @__PURE__ */ React.createElement(Field, { label: "\u4ECB\u7D39\u4EBA(\u8F49\u4ECB\u7D39\u4F86\u6E90)" }, /* @__PURE__ */ React.createElement(
       "input",
       {
