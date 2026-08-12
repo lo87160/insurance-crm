@@ -807,3 +807,9 @@ a{color:inherit}
   .rounded-xl,.rounded-lg{border-radius:0}
   .shadow-sm,.shadow-xl{box-shadow:none}
 }
+.-m-2{margin:-0.5rem}
+.right-0{right:0}
+.top-full{top:100%}
+.w-44{width:11rem}
+.z-40{z-index:40}
+.whitespace-pre-wrap{white-space:pre-wrap}
