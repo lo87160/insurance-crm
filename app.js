@@ -138,6 +138,7 @@
     invoiceDate: "",
     attachmentName: "",
     attachmentData: "",
+    licensePlate: "",
     nextDuePaidFor: "",
     nextDuePaidDate: "",
     paymentPaidFor: "",
@@ -250,6 +251,10 @@
     const [polForm, setPolForm] = useState(emptyPolicy);
     const [polCustId, setPolCustId] = useState(null);
     const [editingPolId, setEditingPolId] = useState(null);
+    const [sidebarOpen, setSidebarOpen] = useState(true);
+    const [showRenewalPanel, setShowRenewalPanel] = useState(false);
+    const [showAnniversaryPanel, setShowAnniversaryPanel] = useState(false);
+    const [copiedId, setCopiedId] = useState(null);
     useEffect(() => {
       (async () => {
         try {
@@ -355,7 +360,7 @@
         }
         if (query.trim()) {
           const q = query.trim().toLowerCase();
-          const hay = `${c.name} ${c.company} ${c.occupation} ${c.contact} ${c.email} ${c.lineId} ${c.note} ${c.referredBy} ${c.idNumber} ${c.addressCity} ${c.addressStreet} ${c.licensePlate} ${c.emergencyContactName} ${(c.policies || []).map((p) => `${p.type} ${p.company}`).join(" ")}`.toLowerCase();
+          const hay = `${c.name} ${c.company} ${c.occupation} ${c.contact} ${c.email} ${c.lineId} ${c.note} ${c.referredBy} ${c.idNumber} ${c.addressCity} ${c.addressStreet} ${c.licensePlate} ${c.emergencyContactName} ${(c.policies || []).map((p) => `${p.type} ${p.company} ${p.licensePlate || ""}`).join(" ")}`.toLowerCase();
           if (!hay.includes(q)) return false;
         }
         if ((stageFilter.length > 0 || categoryFilter.length > 0) && c.policies.length === 0) return false;
@@ -404,6 +409,74 @@
       });
       return Object.entries(counts).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 5);
     }, [customers]);
+    const renewalItems = useMemo(() => {
+      const items = [];
+      customers.forEach((c) => {
+        (c.policies || []).filter((p) => !p.lost).forEach((p) => {
+          if (p.nextDueDate) {
+            const d = daysUntil(p.nextDueDate);
+            if (d >= 0 && d <= 30) {
+              items.push({
+                custId: c.id, custName: c.name, custContact: c.contact, custLineId: c.lineId,
+                licensePlate: p.licensePlate || c.licensePlate, polId: p.id, type: p.type, company: p.company,
+                category: p.category, dueDate: p.nextDueDate, diff: d
+              });
+            }
+          }
+        });
+      });
+      return items.sort((a, b) => a.diff - b.diff);
+    }, [customers]);
+    const anniversaryItems = useMemo(() => {
+      const items = [];
+      customers.forEach((c) => {
+        (c.policies || []).filter((p) => !p.lost && p.category === "壽險" && p.effectiveDate).forEach((p) => {
+          const na = nextAnniversary(p.effectiveDate);
+          if (na && na.diff >= 0 && na.diff <= 30) {
+            items.push({
+              custId: c.id, custName: c.name, custContact: c.contact, custLineId: c.lineId,
+              polId: p.id, type: p.type, company: p.company, years: na.years,
+              anniversaryDate: na.date.toISOString().slice(0, 10), diff: na.diff
+            });
+          }
+        });
+      });
+      return items.sort((a, b) => a.diff - b.diff);
+    }, [customers]);
+    function fallbackCopy(text) {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      try { document.execCommand("copy"); } catch (e) {}
+      document.body.removeChild(ta);
+    }
+    function copyText(id, text) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => {
+          setCopiedId(id);
+          setTimeout(() => setCopiedId(null), 2e3);
+        }).catch(() => {
+          fallbackCopy(text);
+          setCopiedId(id);
+          setTimeout(() => setCopiedId(null), 2e3);
+        });
+      } else {
+        fallbackCopy(text);
+        setCopiedId(id);
+        setTimeout(() => setCopiedId(null), 2e3);
+      }
+    }
+    function renewalNoticeText(it) {
+      const plateLine = it.category === "產險" && it.licensePlate ? `車牌:${it.licensePlate}\n` : "";
+      return `${it.custName} 您好,提醒您的${it.type}保單(${it.company || ""})即將於 ${it.dueDate} 到期,\n${plateLine}請盡快辦理續保,若有任何問題歡迎隨時聯繫我,謝謝!`;
+    }
+    function anniversaryNoticeText(it) {
+      return `${it.custName} 您好,您的${it.type}保單(${it.company || ""})即將迎來第 ${it.years} 週年紀念日(${it.anniversaryDate}),\n藉此機會歡迎跟您約時間聊聊,看看目前的保障規劃是否需要調整,謝謝!`;
+    }
     function toggleExpand(id) {
       setExpanded((e) => __spreadProps(__spreadValues({}, e), { [id]: !e[id] }));
     }
@@ -604,7 +677,7 @@ ${p.type}${p.company ? "(" + p.company + ")" : ""}
               c.lineId,
               c.emergencyContactName,
               c.emergencyContactPhone,
-              c.licensePlate,
+              p && p.licensePlate ? p.licensePlate : c.licensePlate,
               c.email,
               TIERS.find((t) => t.key === c.tier) ? TIERS.find((t) => t.key === c.tier).label : "",
               c.addressCity,
@@ -658,7 +731,7 @@ ${p.type}${p.company ? "(" + p.company + ")" : ""}
       reader.readAsText(file);
       e.target.value = "";
     }
-    return /* @__PURE__ */ React.createElement("div", { className: "min-h-screen bg-stone-50 text-stone-900" }, /* @__PURE__ */ React.createElement("div", { className: "max-w-6xl mx-auto px-4 sm:px-6 py-8" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-5 flex-wrap gap-3" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h1", { className: "text-2xl font-semibold tracking-tight text-stone-900 flex items-center gap-2" }, /* @__PURE__ */ React.createElement(Shield, { size: 22, className: "text-emerald-700" }), " \u4FDD\u96AA\u5BA2\u6236\u8FFD\u8E64\u7CFB\u7D71"), /* @__PURE__ */ React.createElement("p", { className: "text-sm text-stone-500 mt-1" }, "\u4FDD\u7D93\u5C08\u7528 \xB7 \u591A\u5BB6\u4FDD\u96AA\u516C\u53F8\u6BD4\u8F03 \xB7 \u591A\u4FDD\u55AE\u8FFD\u8E64 \xB7 \u8CC7\u6599\u81EA\u52D5\u5132\u5B58\u5728\u672C\u6A5F")), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 print-hide" }, /* @__PURE__ */ React.createElement("div", { className: "relative" }, /* @__PURE__ */ React.createElement(
+    return /* @__PURE__ */ React.createElement("div", { className: "min-h-screen bg-stone-50 text-stone-900", style: { paddingLeft: sidebarOpen ? 200 : 56, transition: "padding-left .2s" } }, /* @__PURE__ */ React.createElement(Sidebar, { open: sidebarOpen, onToggle: () => setSidebarOpen((v) => !v), onOpenRenewal: () => setShowRenewalPanel(true), onOpenAnniversary: () => setShowAnniversaryPanel(true), overdueCount: overdueItems.length, renewalCount: renewalItems.length, anniversaryCount: anniversaryItems.length }), /* @__PURE__ */ React.createElement("div", { className: "max-w-6xl mx-auto px-4 sm:px-6 py-8" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-5 flex-wrap gap-3" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h1", { className: "text-2xl font-semibold tracking-tight text-stone-900 flex items-center gap-2" }, /* @__PURE__ */ React.createElement(Shield, { size: 22, className: "text-emerald-700" }), " \u4FDD\u96AA\u5BA2\u6236\u8FFD\u8E64\u7CFB\u7D71"), /* @__PURE__ */ React.createElement("p", { className: "text-sm text-stone-500 mt-1" }, "\u4FDD\u7D93\u5C08\u7528 \xB7 \u591A\u5BB6\u4FDD\u96AA\u516C\u53F8\u6BD4\u8F03 \xB7 \u591A\u4FDD\u55AE\u8FFD\u8E64 \xB7 \u8CC7\u6599\u81EA\u52D5\u5132\u5B58\u5728\u672C\u6A5F")), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 print-hide" }, /* @__PURE__ */ React.createElement("div", { className: "relative" }, /* @__PURE__ */ React.createElement(
       "button",
       {
         onClick: () => setShowExportMenu((v) => !v),
@@ -883,7 +956,7 @@ ${p.type}${p.company ? "(" + p.company + ")" : ""}
         const dt = dueTone(p.nextDueDate, p.lost, expiryThresholdOf(p.category));
         const pt = p.category === "\u58FD\u96AA" ? dueTone(p.paymentDate, p.lost, 30) : null;
         const anv = !p.lost ? nextAnniversary(p.effectiveDate) : null;
-        return /* @__PURE__ */ React.createElement("tr", { key: p.id, className: `border-b border-stone-50 last:border-0 ${p.lost ? "opacity-50" : ""}` }, /* @__PURE__ */ React.createElement("td", { className: "px-4 py-2.5" }, /* @__PURE__ */ React.createElement("div", { className: "text-stone-800" }, p.type), /* @__PURE__ */ React.createElement("div", { className: "text-xs text-stone-400" }, p.category, p.payFreq ? ` \xB7 ${p.payFreq}` : ""), p.insured && /* @__PURE__ */ React.createElement("div", { className: "text-xs text-stone-400" }, "\u88AB\u4FDD:", p.insured), p.attachmentName && /* @__PURE__ */ React.createElement("button", { type: "button", onClick: () => openAttachment(p.attachmentName, p.attachmentData), className: "text-xs text-emerald-600 underline" }, "\u{1F4C4} ", p.attachmentName), anv && anv.diff <= 30 && /* @__PURE__ */ React.createElement("div", { className: "text-xs text-emerald-600" }, "\u{1F389} \u7B2C", anv.years, "\u9031\u5E74 ", anv.diff === 0 ? "\u5C31\u662F\u4ECA\u5929" : `${anv.diff}\u5929\u5F8C`)), /* @__PURE__ */ React.createElement("td", { className: "px-4 py-2.5 text-stone-500" }, p.company || "\u2014"), /* @__PURE__ */ React.createElement("td", { className: "px-4 py-2.5 font-serif text-stone-700" }, p.insuredAmount ? `\u4FDD\u984D $${currency(p.insuredAmount)}` : "\u2014", /* @__PURE__ */ React.createElement("div", { className: "text-xs text-stone-400 font-sans" }, p.premium ? `\u4FDD\u8CBB $${currency(p.premium)}` : "")), /* @__PURE__ */ React.createElement("td", { className: "px-4 py-2.5" }, p.lost ? /* @__PURE__ */ React.createElement("span", { className: "inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-stone-200 text-stone-500" }, /* @__PURE__ */ React.createElement(Ban, { size: 11 }), " \u5DF2\u6D41\u5931") : /* @__PURE__ */ React.createElement("div", { className: "relative inline-block" }, /* @__PURE__ */ React.createElement(
+        return /* @__PURE__ */ React.createElement("tr", { key: p.id, className: `border-b border-stone-50 last:border-0 ${p.lost ? "opacity-50" : ""}` }, /* @__PURE__ */ React.createElement("td", { className: "px-4 py-2.5" }, /* @__PURE__ */ React.createElement("div", { className: "text-stone-800" }, p.type), /* @__PURE__ */ React.createElement("div", { className: "text-xs text-stone-400" }, p.category, p.payFreq ? ` \xB7 ${p.payFreq}` : ""), p.insured && /* @__PURE__ */ React.createElement("div", { className: "text-xs text-stone-400" }, "\u88AB\u4FDD:", p.insured), p.licensePlate && /* @__PURE__ */ React.createElement("div", { className: "text-xs text-stone-400" }, "\u8ECA\u724C:", p.licensePlate), p.attachmentName && /* @__PURE__ */ React.createElement("button", { type: "button", onClick: () => openAttachment(p.attachmentName, p.attachmentData), className: "text-xs text-emerald-600 underline" }, "\u{1F4C4} ", p.attachmentName), anv && anv.diff <= 30 && /* @__PURE__ */ React.createElement("div", { className: "text-xs text-emerald-600" }, "\u{1F389} \u7B2C", anv.years, "\u9031\u5E74 ", anv.diff === 0 ? "\u5C31\u662F\u4ECA\u5929" : `${anv.diff}\u5929\u5F8C`)), /* @__PURE__ */ React.createElement("td", { className: "px-4 py-2.5 text-stone-500" }, p.company || "\u2014"), /* @__PURE__ */ React.createElement("td", { className: "px-4 py-2.5 font-serif text-stone-700" }, p.insuredAmount ? `\u4FDD\u984D $${currency(p.insuredAmount)}` : "\u2014", /* @__PURE__ */ React.createElement("div", { className: "text-xs text-stone-400 font-sans" }, p.premium ? `\u4FDD\u8CBB $${currency(p.premium)}` : "")), /* @__PURE__ */ React.createElement("td", { className: "px-4 py-2.5" }, p.lost ? /* @__PURE__ */ React.createElement("span", { className: "inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-stone-200 text-stone-500" }, /* @__PURE__ */ React.createElement(Ban, { size: 11 }), " \u5DF2\u6D41\u5931") : /* @__PURE__ */ React.createElement("div", { className: "relative inline-block" }, /* @__PURE__ */ React.createElement(
           "select",
           {
             value: p.stage,
@@ -1017,15 +1090,7 @@ ${p.type}${p.company ? "(" + p.company + ")" : ""}
         placeholder: "\u4F8B:\u91AB\u7642\u96AA\u4FDD\u984D\u4E0D\u8DB3\u3001\u7121\u5931\u80FD\u6276\u52A9\u96AA",
         className: "w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-300 resize-none"
       }
-    )), /* @__PURE__ */ React.createElement("div", { className: "grid grid-cols-2 gap-3" }, /* @__PURE__ */ React.createElement(Field, { label: "\u8ECA\u724C\u865F\u78BC" }, /* @__PURE__ */ React.createElement(
-      "input",
-      {
-        value: custForm.licensePlate,
-        onChange: (e) => setCustForm(__spreadProps(__spreadValues({}, custForm), { licensePlate: e.target.value })),
-        placeholder: "\u4F8B:ABC-1234",
-        className: "w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-300"
-      }
-    )), /* @__PURE__ */ React.createElement(Field, { label: "\u8077\u696D\u7B49\u7D1A(\u610F\u5916\u96AA\u6838\u4FDD\u7528)" }, /* @__PURE__ */ React.createElement(
+    )), /* @__PURE__ */ React.createElement("div", { className: "grid grid-cols-2 gap-3" }, /* @__PURE__ */ React.createElement(Field, { label: "\u8077\u696D\u7B49\u7D1A(\u610F\u5916\u96AA\u6838\u4FDD\u7528)" }, /* @__PURE__ */ React.createElement(
       "select",
       {
         value: custForm.occupationClass,
@@ -1102,6 +1167,14 @@ ${p.type}${p.company ? "(" + p.company + ")" : ""}
         required: true,
         value: polForm.type,
         onChange: (e) => setPolForm(__spreadProps(__spreadValues({}, polForm), { type: e.target.value })),
+        className: "w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-300"
+      }
+    )), polForm.category === "\u7522\u96AA" && /* @__PURE__ */ React.createElement(Field, { label: "\u8ECA\u724C\u865F\u78BC(\u7522\u96AA/\u8ECA\u96AA\u7528)" }, /* @__PURE__ */ React.createElement(
+      "input",
+      {
+        value: polForm.licensePlate || "",
+        onChange: (e) => setPolForm(__spreadProps(__spreadValues({}, polForm), { licensePlate: e.target.value })),
+        placeholder: "\u4F8B:ABC-1234",
         className: "w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-300"
       }
     )), /* @__PURE__ */ React.createElement(Field, { label: "\u4FDD\u96AA\u516C\u53F8" }, /* @__PURE__ */ React.createElement(
@@ -1206,7 +1279,104 @@ ${p.type}${p.company ? "(" + p.company + ")" : ""}
         onChange: handlePolicyAttachment,
         className: "w-full text-xs text-stone-500 border border-stone-300 rounded-lg px-3 py-2.5"
       }
-    )), /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 pt-2" }, /* @__PURE__ */ React.createElement("button", { type: "button", onClick: () => setShowPolForm(false), className: "flex-1 py-3 text-sm rounded-lg border border-stone-300 text-stone-600 hover:bg-stone-50" }, "\u53D6\u6D88"), /* @__PURE__ */ React.createElement("button", { type: "submit", className: "flex-1 py-3 text-sm rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-medium" }, editingPolId ? "\u5132\u5B58\u8B8A\u66F4" : "\u65B0\u589E\u4FDD\u55AE"))))));
+    )), /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 pt-2" }, /* @__PURE__ */ React.createElement("button", { type: "button", onClick: () => setShowPolForm(false), className: "flex-1 py-3 text-sm rounded-lg border border-stone-300 text-stone-600 hover:bg-stone-50" }, "\u53D6\u6D88"), /* @__PURE__ */ React.createElement("button", { type: "submit", className: "flex-1 py-3 text-sm rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-medium" }, editingPolId ? "\u5132\u5B58\u8B8A\u66F4" : "\u65B0\u589E\u4FDD\u55AE"))))),
+      showRenewalPanel && /* @__PURE__ */ React.createElement("div", { className: "fixed inset-0 bg-stone-900/40 flex items-center justify-center p-4 z-50" }, /* @__PURE__ */ React.createElement("div", { className: "bg-white rounded-xl w-full max-w-lg p-6 shadow-xl max-h-[90vh] overflow-y-auto" },
+        /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-4" },
+          /* @__PURE__ */ React.createElement("h2", { className: "text-base font-semibold text-stone-800" }, "\u7E8C\u4FDD\u63D0\u9192(30\u5929\u5167)"),
+          /* @__PURE__ */ React.createElement("button", { onClick: () => setShowRenewalPanel(false), className: "p-2 -m-2 text-stone-400 hover:text-stone-700" }, /* @__PURE__ */ React.createElement(X, { size: 20 }))
+        ),
+        renewalItems.length === 0 ? /* @__PURE__ */ React.createElement("div", { className: "text-sm text-stone-400 py-8 text-center" }, "\u672A\u4F86\u572830\u5929\u5167\u6C92\u6709\u9700\u8981\u7E8C\u4FDD\u7684\u4FDD\u55AE") :
+        /* @__PURE__ */ React.createElement("div", { className: "space-y-2" }, renewalItems.map((it) => {
+          const rid = "renew-" + it.polId;
+          return /* @__PURE__ */ React.createElement("div", { key: rid, className: "border border-stone-200 rounded-lg p-3" },
+            /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-1" },
+              /* @__PURE__ */ React.createElement("span", { className: "text-sm font-medium text-stone-800" }, it.custName, " \xB7 ", it.type),
+              /* @__PURE__ */ React.createElement("span", { className: `text-xs font-medium ${it.diff <= 7 ? "text-rose-600" : "text-amber-600"}` }, it.diff === 0 ? "\u4ECA\u5929\u5230\u671F" : `${it.diff}\u5929\u5F8C\u5230\u671F`, " \xB7 ", it.dueDate)
+            ),
+            it.category === "\u7522\u96AA" && it.licensePlate && /* @__PURE__ */ React.createElement("div", { className: "text-xs text-stone-400 mb-2" }, "\u8ECA\u724C:", it.licensePlate),
+            /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2" },
+              it.custContact && /* @__PURE__ */ React.createElement("a", { href: `tel:${it.custContact}`, className: "p-2 text-stone-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg" }, "\u{1F4DE}"),
+              it.custLineId && /* @__PURE__ */ React.createElement("a", { href: `https://line.me/ti/p/~${it.custLineId}`, target: "_blank", rel: "noreferrer", className: "p-2 text-stone-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg" }, "\u{1F4AC}"),
+              /* @__PURE__ */ React.createElement("button", { onClick: () => copyText(rid, renewalNoticeText(it)), className: "flex-1 flex items-center justify-center gap-1 text-xs py-2 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100" },
+                copiedId === rid ? "\u2713 \u5DF2\u8907\u88FD" : "\u{1F4CB} \u8907\u88FD\u901A\u77E5\u6587\u5B57"
+              )
+            )
+          );
+        }))
+      )),
+      showAnniversaryPanel && /* @__PURE__ */ React.createElement("div", { className: "fixed inset-0 bg-stone-900/40 flex items-center justify-center p-4 z-50" }, /* @__PURE__ */ React.createElement("div", { className: "bg-white rounded-xl w-full max-w-lg p-6 shadow-xl max-h-[90vh] overflow-y-auto" },
+        /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-4" },
+          /* @__PURE__ */ React.createElement("h2", { className: "text-base font-semibold text-stone-800" }, "\u58FD\u96AA\u4FDD\u55AE\u9031\u5E74\u63D0\u9192(30\u5929\u5167)"),
+          /* @__PURE__ */ React.createElement("button", { onClick: () => setShowAnniversaryPanel(false), className: "p-2 -m-2 text-stone-400 hover:text-stone-700" }, /* @__PURE__ */ React.createElement(X, { size: 20 }))
+        ),
+        anniversaryItems.length === 0 ? /* @__PURE__ */ React.createElement("div", { className: "text-sm text-stone-400 py-8 text-center" }, "\u672A\u4F86\u572830\u5929\u5167\u6C92\u6709\u4FDD\u55AE\u9031\u5E74\u65E5") :
+        /* @__PURE__ */ React.createElement("div", { className: "space-y-2" }, anniversaryItems.map((it) => {
+          const aid = "anniv-" + it.polId;
+          return /* @__PURE__ */ React.createElement("div", { key: aid, className: "border border-stone-200 rounded-lg p-3" },
+            /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-2" },
+              /* @__PURE__ */ React.createElement("span", { className: "text-sm font-medium text-stone-800" }, it.custName, " \xB7 ", it.type),
+              /* @__PURE__ */ React.createElement("span", { className: "text-xs font-medium text-emerald-600" }, "\u7B2C", it.years, "\u9031\u5E74 \xB7 ", it.diff === 0 ? "\u4ECA\u5929" : `${it.diff}\u5929\u5F8C`, " \xB7 ", it.anniversaryDate)
+            ),
+            /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2" },
+              it.custContact && /* @__PURE__ */ React.createElement("a", { href: `tel:${it.custContact}`, className: "p-2 text-stone-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg" }, "\u{1F4DE}"),
+              it.custLineId && /* @__PURE__ */ React.createElement("a", { href: `https://line.me/ti/p/~${it.custLineId}`, target: "_blank", rel: "noreferrer", className: "p-2 text-stone-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg" }, "\u{1F4AC}"),
+              /* @__PURE__ */ React.createElement("button", { onClick: () => copyText(aid, anniversaryNoticeText(it)), className: "flex-1 flex items-center justify-center gap-1 text-xs py-2 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100" },
+                copiedId === aid ? "\u2713 \u5DF2\u8907\u88FD" : "\u{1F4CB} \u8907\u88FD\u901A\u77E5\u6587\u5B57"
+              )
+            )
+          );
+        }))
+      ))
+    );
+  }
+  function SidebarItem({ icon, label, open, badge, onClick, active }) {
+    return /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        onClick,
+        style: {
+          display: "flex", alignItems: "center", gap: 10, width: "100%",
+          padding: "10px 12px", marginBottom: 4, borderRadius: 8, border: "none",
+          background: active ? "rgba(255,255,255,0.12)" : "transparent",
+          color: "#e7e5e4", cursor: "pointer", fontSize: 13, textAlign: "left",
+          justifyContent: open ? "flex-start" : "center"
+        }
+      },
+      /* @__PURE__ */ React.createElement("span", { style: { fontSize: 16, flexShrink: 0 } }, icon),
+      open && /* @__PURE__ */ React.createElement("span", { style: { flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } }, label),
+      open && badge > 0 && /* @__PURE__ */ React.createElement("span", { style: { background: "#e11d48", color: "#fff", fontSize: 11, fontWeight: 600, borderRadius: 9999, padding: "1px 7px", flexShrink: 0 } }, badge)
+    );
+  }
+  function Sidebar({ open, onToggle, onOpenRenewal, onOpenAnniversary, overdueCount, renewalCount, anniversaryCount }) {
+    return /* @__PURE__ */ React.createElement(
+      "div",
+      {
+        className: "print-hide",
+        style: {
+          position: "fixed", top: 0, left: 0, height: "100vh", width: open ? 200 : 56,
+          background: "#1c1917", transition: "width .2s", overflow: "hidden",
+          zIndex: 30, display: "flex", flexDirection: "column"
+        }
+      },
+      /* @__PURE__ */ React.createElement(
+        "div",
+        { style: { display: "flex", alignItems: "center", justifyContent: open ? "space-between" : "center", padding: "16px 12px", borderBottom: "1px solid rgba(255,255,255,0.1)" } },
+        open && /* @__PURE__ */ React.createElement("span", { style: { fontWeight: 600, fontSize: 14, color: "#fff", whiteSpace: "nowrap" } }, "\u4FDD\u7D93\u52A9\u624B"),
+        /* @__PURE__ */ React.createElement(
+          "button",
+          { onClick: onToggle, style: { color: "#fff", background: "rgba(255,255,255,0.08)", border: "none", borderRadius: 6, width: 28, height: 28, cursor: "pointer", flexShrink: 0 } },
+          open ? "\u25C0" : "\u25B6"
+        )
+      ),
+      /* @__PURE__ */ React.createElement(
+        "div",
+        { style: { flex: 1, overflowY: "auto", padding: 8, marginTop: 8 } },
+        SidebarItem({ icon: "\u{1F465}", label: "\u5BA2\u6236\u5217\u8868", open, active: true, onClick: () => window.scrollTo({ top: 0, behavior: "smooth" }) }),
+        SidebarItem({ icon: "\u26A0\uFE0F", label: "\u903E\u671F\u63D0\u9192", open, badge: overdueCount, onClick: () => window.scrollTo({ top: 0, behavior: "smooth" }) }),
+        SidebarItem({ icon: "\u{1F514}", label: "\u7E8C\u4FDD\u63D0\u9192", open, badge: renewalCount, onClick: onOpenRenewal }),
+        SidebarItem({ icon: "\u{1F389}", label: "\u4FDD\u55AE\u9031\u5E74", open, badge: anniversaryCount, onClick: onOpenAnniversary })
+      )
+    );
   }
   function PillGroup({ value, onToggle, options }) {
     return /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-3 flex-wrap" }, options.map((o) => {
@@ -1231,4 +1401,3 @@ ${p.type}${p.company ? "(" + p.company + ")" : ""}
   }
   ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(InsuranceTracker));
 })();
-
